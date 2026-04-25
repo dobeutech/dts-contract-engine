@@ -78,6 +78,11 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "supabase"
-    ]
+    ],
+    "overrides": {
+      "@fastify/static": ">=9.1.1",
+      "postcss": ">=8.5.10",
+      "uuid@<14.0.0": ">=14.0.0"
+    }
   }
 }
