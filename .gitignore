@@ -34,12 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# vercel
-.vercel
+# vercel — keep project.json (link to remote project, no secrets) but ignore everything else
+.vercel/*
+!.vercel/project.json
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Local Netlify folder
-.netlify

@@ -6,7 +6,7 @@ Assumes a fresh clone with no local state.
 ## Prerequisites
 
 - Node 22+ (24.x is what was tested) — the repo uses Corepack-managed pnpm
-- A Netlify account with access to the **dobeutechsolutions** team
+- A Vercel account with access to the **dobeutech-7910s-projects** team
 - A Supabase account with access to the **unified-ai** project (`qdwvcrmdqweojverdmmz`)
 - The GitHub CLI (`gh`) authenticated against `dobeutech`
 
@@ -77,34 +77,83 @@ The `reverted` mark is local-only and will not affect the foreign app's
 tables — but it does mean _that_ app will see its migration as reverted
 in its own CLI view. Coordinate with the other tenant before doing this.
 
-## Netlify deployment
+## Vercel deployment
 
-Site is `dts-contract-engine` under the **dobeutechsolutions** team.
+Project is `dts-contract-engine` under the **dobeutech-7910s-projects** team.
 
-- Site ID: `3ee2c4c9-dd7e-4ef6-aa98-31f818f5244c`
-- Production URL: `https://dts-contract-engine.netlify.app`
+- Project ID: `prj_OvQ1IBFLPKAvvWYeK9kbA3sW0s1Y`
+- Team ID: `team_8K43hpr1Nzs0UsjjUCGh8OBK`
+- Production URL: `https://dts-contract-engine.vercel.app`
 - Required env vars (already set; replace if rotated):
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `NEXT_PUBLIC_SUPABASE_URL` — plain text, all targets
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — plain text, all targets
+  - `SUPABASE_SERVICE_ROLE_KEY` — encrypted, production+preview only
 
-To redeploy from local:
+The repo is linked via `.vercel/project.json` (committed since it has no
+secrets — only project + team IDs). `vercel` CLI auto-detects the link
+when run from the repo root.
+
+### Why Vercel and not Netlify
+
+We tried Netlify first. Two issues hit consecutively:
+
+1. `@netlify/plugin-nextjs` 5.15.9 doesn't yet support Next.js 16 — the
+   Lambda runtime can't find `next/dist/server/lib/start-server.js`.
+2. Even after pinning to Next 15.5.x, pnpm's symlinked `node_modules`
+   layout broke Vercel NFT (Node File Trace) — `start-server.js` wasn't
+   getting included in the function bundle. The fix would have been
+   `node-linker=hoisted` in `.npmrc`, but Vercel handles pnpm natively
+   without that workaround, so we moved.
+
+### Deploying
+
+CLI is installed as a devDep. The Vercel PAT must be set as an env var
+(never committed):
 
 ```bash
-$env:NETLIFY_AUTH_TOKEN="<PAT>"   # PowerShell
-pnpm exec netlify deploy --prod --build
+$env:VERCEL_TOKEN="<PAT>"   # PowerShell
+pnpm exec vercel deploy --prod --yes
 ```
 
-To set or rotate an env var:
+`--yes` accepts existing project link without prompting. Without
+`--prod`, you get a preview deploy (gated by SSO unless disabled — see
+below).
+
+### Setting or rotating env vars
 
 ```bash
-pnpm exec netlify env:set SUPABASE_SERVICE_ROLE_KEY "<new-value>"
+$env:VERCEL_TOKEN="<PAT>"
+pnpm exec vercel env rm SUPABASE_SERVICE_ROLE_KEY production --yes
+pnpm exec vercel env add SUPABASE_SERVICE_ROLE_KEY production
+# (paste new value at the prompt; it never lands in shell history)
 ```
 
-This works once `.netlify/state.json` points at site `3ee2c4c9-...`. If
-the CLI fails with `Missing required path variable 'account_id'`, the
-site's stored `account_id` mismatches your token's accessible team —
-re-create the site under the team your token can write to.
+After any env change, redeploy: env updates do NOT propagate to existing
+deployments — they only apply to the next build.
+
+### Deployment Protection / SSO
+
+Vercel teams default to **Standard Protection** (`ssoProtection.deploymentType: "all_except_custom_domains"`), which means every preview URL and the auto-generated production URL require Vercel SSO to view. The custom domain (if you add one) is exempt.
+
+This was disabled during initial bootstrap so we could verify the deploy.
+Re-enable for internal-only access:
+
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://api.vercel.com/v9/projects/prj_OvQ1IBFLPKAvvWYeK9kbA3sW0s1Y?teamId=team_8K43hpr1Nzs0UsjjUCGh8OBK" \
+  -d '{"ssoProtection":{"deploymentType":"all_except_custom_domains"}}'
+```
+
+When SSO is on, only Vercel team members (or invited guests) can access
+the site — appropriate for an internal tool. Once we're ready for
+clients to view contracts via the portal, either:
+
+- Add a custom domain (which is exempt from SSO), or
+- Use `passwordProtection` for client-portal-only routes, or
+- Build the client portal under a path that bypasses SSO via `/api/`
+  routes that authenticate via the `client_portal_token` instead.
 
 ## Credential rotation
 
@@ -112,15 +161,15 @@ In production, all four of these credentials should be on a rotation
 schedule. The session that bootstrapped this repo leaked them in a
 transcript; rotate before going public:
 
-| Credential                | Where                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Netlify PAT               | `https://app.netlify.com/user/applications#personal-access-tokens`                                                  |
-| Supabase PAT              | `https://supabase.com/dashboard/account/tokens`                                                                     |
-| Supabase service-role key | Project Settings → API → "Reset service_role key", then `pnpm exec netlify env:set SUPABASE_SERVICE_ROLE_KEY <new>` |
-| Supabase anon key         | Same place; anon keys are designed to be public so this is optional                                                 |
+| Credential                | Where                                                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel PAT                | `https://vercel.com/account/settings/tokens`                                                                                       |
+| Supabase PAT              | `https://supabase.com/dashboard/account/tokens`                                                                                    |
+| Supabase service-role key | Project Settings → API → "Reset service_role key", then re-add via `pnpm exec vercel env add SUPABASE_SERVICE_ROLE_KEY production` |
+| Supabase anon key         | Same place; anon keys are designed to be public so this is optional                                                                |
 
-After rotating any Netlify env var, trigger a redeploy
-(`pnpm exec netlify deploy --prod --build`) — env-var changes are not
+After rotating any Vercel env var, trigger a redeploy
+(`pnpm exec vercel deploy --prod --yes`) — env-var changes are not
 picked up by existing functions until the next build.
 
 ## Repository layout (the parts that matter)
@@ -140,7 +189,7 @@ supabase/
   migrations/0001_init.sql    # initial schema, all in dts.*
 docs/
   SETUP.md                    # this file
-netlify.toml                  # build config + security headers
+.vercel/project.json          # links repo to the Vercel project (no secrets)
 ```
 
 ## Pre-commit hook
@@ -161,6 +210,7 @@ issue. Bypassing is reserved for genuine emergencies.
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `PGRST106 Invalid schema: dts` from any Supabase call      | `dts` not in exposed schemas list (see above)                                                                      |
 | Query returns 0 rows when data exists                      | Forgot `.schema('dts')` on the client; querying `public`                                                           |
-| Netlify build fails with env-var missing                   | Env var unset; check `pnpm exec netlify env:list`                                                                  |
+| Vercel build fails with env-var missing                    | Env var unset; check `pnpm exec vercel env ls production`                                                          |
+| Vercel deploy URL shows "Authentication Required"          | Deployment Protection / SSO is on — see Vercel deployment section above                                            |
 | `pnpm supabase db push` complains about unknown migrations | Foreign app's history; use Path A above instead                                                                    |
 | Form components missing                                    | `pnpm dlx shadcn@latest add form` is silently broken on shadcn 4.4 + RHF 7.73 — hand-port from the registry source |
