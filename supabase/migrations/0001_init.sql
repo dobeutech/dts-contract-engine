@@ -1,15 +1,32 @@
 -- ============================================================================
 -- DTS Contract Engine — Initial Schema
+-- All objects live in the `dts` schema so this project can share a Supabase
+-- project (e.g., the shared "unified-ai" instance) without colliding with
+-- other apps' table names.
 -- ============================================================================
 
--- Enable extensions
+-- Extensions live in the default schema (`public`) — Supabase convention.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Project-scoped schema
+CREATE SCHEMA IF NOT EXISTS dts;
+
+-- Expose the schema to PostgREST/Supabase clients.
+-- After this migration: in Supabase Dashboard → Settings → API → "Exposed schemas",
+-- add `dts`. The Supabase JS client then needs `.schema('dts')` on every query.
+GRANT USAGE ON SCHEMA dts TO authenticated, service_role, anon;
+GRANT ALL ON ALL TABLES IN SCHEMA dts TO authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA dts TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA dts
+  GRANT ALL ON TABLES TO authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA dts
+  GRANT ALL ON SEQUENCES TO authenticated, service_role;
 
 -- ============================================================================
 -- AGENCY (singleton)
 -- ============================================================================
-CREATE TABLE agency_settings (
+CREATE TABLE dts.agency_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   legal_name TEXT NOT NULL,
@@ -27,7 +44,7 @@ CREATE TABLE agency_settings (
 -- ============================================================================
 -- PRICING CONFIG (versioned, single active)
 -- ============================================================================
-CREATE TABLE pricing_config (
+CREATE TABLE dts.pricing_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   version INTEGER NOT NULL UNIQUE,
   is_active BOOLEAN NOT NULL DEFAULT FALSE,
@@ -36,12 +53,12 @@ CREATE TABLE pricing_config (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX one_active_config ON pricing_config (is_active) WHERE is_active = TRUE;
+CREATE UNIQUE INDEX dts_pricing_config_one_active ON dts.pricing_config (is_active) WHERE is_active = TRUE;
 
 -- ============================================================================
 -- CLIENTS
 -- ============================================================================
-CREATE TABLE clients (
+CREATE TABLE dts.clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company TEXT NOT NULL,
   contact_name TEXT,
@@ -58,16 +75,16 @@ CREATE TABLE clients (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX clients_email_idx ON clients (email) WHERE deleted_at IS NULL;
-CREATE INDEX clients_relationship_idx ON clients (relationship_tag);
+CREATE INDEX dts_clients_email_idx ON dts.clients (email) WHERE deleted_at IS NULL;
+CREATE INDEX dts_clients_relationship_idx ON dts.clients (relationship_tag);
 
 -- ============================================================================
 -- QUOTES (the working draft)
 -- ============================================================================
-CREATE TABLE quotes (
+CREATE TABLE dts.quotes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  pricing_config_id UUID NOT NULL REFERENCES pricing_config(id),
+  client_id UUID NOT NULL REFERENCES dts.clients(id) ON DELETE CASCADE,
+  pricing_config_id UUID NOT NULL REFERENCES dts.pricing_config(id),
   project_name TEXT,
   project_type TEXT NOT NULL CHECK (project_type IN ('marketing', 'website', 'consulting')),
   tier TEXT,
@@ -87,15 +104,15 @@ CREATE TABLE quotes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX quotes_client_idx ON quotes (client_id) WHERE deleted_at IS NULL;
-CREATE INDEX quotes_status_idx ON quotes (status) WHERE deleted_at IS NULL;
+CREATE INDEX dts_quotes_client_idx ON dts.quotes (client_id) WHERE deleted_at IS NULL;
+CREATE INDEX dts_quotes_status_idx ON dts.quotes (status) WHERE deleted_at IS NULL;
 
 -- ============================================================================
 -- CONTRACTS (signed instances — immutable)
 -- ============================================================================
-CREATE TABLE contracts (
+CREATE TABLE dts.contracts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE RESTRICT,
+  quote_id UUID NOT NULL REFERENCES dts.quotes(id) ON DELETE RESTRICT,
   version INTEGER NOT NULL DEFAULT 1,
   signed_pdf_url TEXT,
   signature_provider TEXT NOT NULL DEFAULT 'docuseal',
@@ -108,16 +125,16 @@ CREATE TABLE contracts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX contracts_quote_idx ON contracts (quote_id);
-CREATE INDEX contracts_active_idx ON contracts (effective_start, effective_end);
+CREATE INDEX dts_contracts_quote_idx ON dts.contracts (quote_id);
+CREATE INDEX dts_contracts_active_idx ON dts.contracts (effective_start, effective_end);
 
 -- ============================================================================
 -- CONSULTING LOG (the killer feature — every billable minute)
 -- ============================================================================
-CREATE TABLE consulting_log (
+CREATE TABLE dts.consulting_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
+  client_id UUID NOT NULL REFERENCES dts.clients(id) ON DELETE CASCADE,
+  contract_id UUID REFERENCES dts.contracts(id) ON DELETE SET NULL,
   occurred_at TIMESTAMPTZ NOT NULL,
   duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
   type TEXT NOT NULL CHECK (type IN ('call', 'email', 'message', 'meeting', 'research', 'other')),
@@ -132,16 +149,16 @@ CREATE TABLE consulting_log (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX consulting_log_client_period_idx ON consulting_log (client_id, occurred_at);
-CREATE INDEX consulting_log_unbilled_idx ON consulting_log (client_id) WHERE invoice_id IS NULL AND billable = TRUE AND waived = FALSE;
+CREATE INDEX dts_consulting_log_client_period_idx ON dts.consulting_log (client_id, occurred_at);
+CREATE INDEX dts_consulting_log_unbilled_idx ON dts.consulting_log (client_id) WHERE invoice_id IS NULL AND billable = TRUE AND waived = FALSE;
 
 -- ============================================================================
 -- INVOICES
 -- ============================================================================
-CREATE TABLE invoices (
+CREATE TABLE dts.invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL REFERENCES clients(id),
-  contract_id UUID REFERENCES contracts(id),
+  client_id UUID NOT NULL REFERENCES dts.clients(id),
+  contract_id UUID REFERENCES dts.contracts(id),
   number TEXT UNIQUE NOT NULL,
   period_start DATE,
   period_end DATE,
@@ -159,13 +176,13 @@ CREATE TABLE invoices (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX invoices_client_idx ON invoices (client_id);
-CREATE INDEX invoices_status_idx ON invoices (status);
+CREATE INDEX dts_invoices_client_idx ON dts.invoices (client_id);
+CREATE INDEX dts_invoices_status_idx ON dts.invoices (status);
 
 -- ============================================================================
 -- AUDIT LOG (immutable)
 -- ============================================================================
-CREATE TABLE audit_log (
+CREATE TABLE dts.audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id UUID REFERENCES auth.users(id),
   action TEXT NOT NULL,
@@ -177,43 +194,43 @@ CREATE TABLE audit_log (
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX audit_log_entity_idx ON audit_log (entity_type, entity_id);
-CREATE INDEX audit_log_actor_idx ON audit_log (actor_id, occurred_at DESC);
+CREATE INDEX dts_audit_log_entity_idx ON dts.audit_log (entity_type, entity_id);
+CREATE INDEX dts_audit_log_actor_idx ON dts.audit_log (actor_id, occurred_at DESC);
 
 -- ============================================================================
--- TRIGGERS — updated_at maintenance
+-- TRIGGERS — updated_at maintenance (function lives in dts schema)
 -- ============================================================================
-CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION dts.set_updated_at() RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER agency_settings_updated_at BEFORE UPDATE ON agency_settings FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER clients_updated_at BEFORE UPDATE ON clients FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER quotes_updated_at BEFORE UPDATE ON quotes FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER consulting_log_updated_at BEFORE UPDATE ON consulting_log FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER invoices_updated_at BEFORE UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER agency_settings_updated_at BEFORE UPDATE ON dts.agency_settings FOR EACH ROW EXECUTE FUNCTION dts.set_updated_at();
+CREATE TRIGGER clients_updated_at BEFORE UPDATE ON dts.clients FOR EACH ROW EXECUTE FUNCTION dts.set_updated_at();
+CREATE TRIGGER quotes_updated_at BEFORE UPDATE ON dts.quotes FOR EACH ROW EXECUTE FUNCTION dts.set_updated_at();
+CREATE TRIGGER consulting_log_updated_at BEFORE UPDATE ON dts.consulting_log FOR EACH ROW EXECUTE FUNCTION dts.set_updated_at();
+CREATE TRIGGER invoices_updated_at BEFORE UPDATE ON dts.invoices FOR EACH ROW EXECUTE FUNCTION dts.set_updated_at();
 
 -- ============================================================================
 -- ROW LEVEL SECURITY — single-owner mode (v1)
 -- ============================================================================
-ALTER TABLE agency_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pricing_config ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE quotes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE contracts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE consulting_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.agency_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.pricing_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.quotes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.contracts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.consulting_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dts.audit_log ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users (the agency owner) have full access.
 -- Client portal access goes through service_role with token validation in app.
 
-CREATE POLICY "owner_all" ON agency_settings FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON pricing_config FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON clients FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON quotes FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON contracts FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON consulting_log FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_all" ON invoices FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "owner_read" ON audit_log FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.agency_settings FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.pricing_config FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.clients FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.quotes FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.contracts FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.consulting_log FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_all" ON dts.invoices FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "owner_read" ON dts.audit_log FOR SELECT USING (auth.role() = 'authenticated');
 -- audit_log writes only via service_role (server-side)

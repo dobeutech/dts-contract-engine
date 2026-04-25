@@ -44,6 +44,13 @@ single system that:
    Client portal access is via signed JWT tokens scoped to a single
    client_id, never via Supabase auth.
 
+7a. **All tables live in the `dts` Postgres schema.** The Supabase
+project is shared with other apps (the unified-ai instance), so
+every Supabase client call MUST use `.schema('dts')`:
+`supabase.schema('dts').from('clients').select(...)`.
+Never put project tables in `public`. New migrations must qualify
+every object with `dts.`.
+
 8. **Audit log every pricing config change.** A diff between old and
    new config is written to `audit_log` on every update.
 
