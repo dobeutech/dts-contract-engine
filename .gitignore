@@ -34,6 +34,15 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local AI assistant settings
+.claude/settings.local.json
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # vercel — keep project.json (link to remote project, no secrets) but ignore everything else
 .vercel/*
 !.vercel/project.json

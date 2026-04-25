@@ -155,6 +155,125 @@ clients to view contracts via the portal, either:
 - Build the client portal under a path that bypasses SSO via `/api/`
   routes that authenticate via the `client_portal_token` instead.
 
+## Custom domain — `contracts.dobeu.tech`
+
+The production-facing URL is `https://contracts.dobeu.tech`. The domain is
+attached to the Vercel project and acts as the SSO bypass: `*.vercel.app`
+preview URLs require Vercel team SSO, the custom domain is publicly
+reachable and gated only by the Supabase login.
+
+This is the **dual-gate auth model**: Vercel SSO (outer, team-only) on
+previews; Supabase email/password (inner, per-user) on the production
+custom domain.
+
+### Verifying the SSO setting
+
+Vercel SSO `deploymentType` must be `all_except_custom_domains`:
+
+```bash
+# Read current setting
+curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+  "https://api.vercel.com/v9/projects/prj_OvQ1IBFLPKAvvWYeK9kbA3sW0s1Y?teamId=team_8K43hpr1Nzs0UsjjUCGh8OBK" \
+  | jq '.ssoProtection'
+
+# If it's anything other than {"deploymentType":"all_except_custom_domains"}, PATCH:
+curl -X PATCH \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://api.vercel.com/v9/projects/prj_OvQ1IBFLPKAvvWYeK9kbA3sW0s1Y?teamId=team_8K43hpr1Nzs0UsjjUCGh8OBK" \
+  -d '{"ssoProtection":{"deploymentType":"all_except_custom_domains"}}'
+```
+
+### Supabase auth URLs
+
+Supabase Auth's redirect-URL allowlist must include the custom domain.
+In the Supabase dashboard for the `unified-ai` project: **Authentication
+→ URL Configuration**:
+
+- **Site URL**: `https://contracts.dobeu.tech`
+- **Redirect URLs** (allowlist): `https://contracts.dobeu.tech`,
+  `https://contracts.dobeu.tech/**`, plus the existing `*.vercel.app`
+  entries for previews.
+
+`NEXT_PUBLIC_APP_URL` in Vercel env should match: `https://contracts.dobeu.tech`.
+
+## Sentry
+
+Error monitoring is wired through `@sentry/nextjs`. Three init files —
+`sentry.client.config.ts`, `sentry.server.config.ts`,
+`sentry.edge.config.ts` — plus `instrumentation.ts` and a
+`withSentryConfig` wrap in `next.config.ts`.
+
+Build-time source-map upload activates when both `SENTRY_DSN` and
+`SENTRY_AUTH_TOKEN` are set; without them the wrap is a no-op so local
+builds stay clean.
+
+Required env vars (set in Vercel for production+preview):
+
+```
+SENTRY_DSN              # https://<key>@<org>.ingest.sentry.io/<project>
+NEXT_PUBLIC_SENTRY_DSN  # same value, exposed to the browser SDK
+SENTRY_ORG              # e.g. dobeu-tech
+SENTRY_PROJECT          # e.g. dts-contract-engine
+SENTRY_AUTH_TOKEN       # https://sentry.io/settings/account/api/auth-tokens/
+                        # (project:write scope; production+preview only)
+```
+
+Sample rates default to `tracesSampleRate: 0.1` and
+`replaysOnErrorSampleRate: 1.0` (replay only on errors). Replay masking
+is on by default — passwords and other inputs are not recorded.
+
+## CI — GitHub Actions
+
+`.github/workflows/ci.yml` runs on every PR and push to `main`:
+
+| Job      | Steps                                                                |
+| -------- | -------------------------------------------------------------------- |
+| `verify` | `pnpm install --frozen-lockfile`, lint, typecheck, vitest, build     |
+| `e2e`    | Playwright against `https://contracts.dobeu.tech` (gated by secrets) |
+
+**Required GitHub secrets** for the e2e job:
+
+| Secret              | Purpose                                   |
+| ------------------- | ----------------------------------------- |
+| `E2E_TEST_EMAIL`    | Email for the dedicated e2e Supabase user |
+| `E2E_TEST_PASSWORD` | Password for the same user                |
+
+If those secrets aren't set, the auth e2e auto-skips; the
+middleware-redirect e2e still runs and acts as a deployed-site canary.
+
+## End-to-end tests
+
+Two specs in `e2e/`:
+
+- `auth.spec.ts` — sign in with `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD`,
+  verify the home page shows the expected user, sign out. Auto-skips if
+  credentials aren't set.
+- `middleware-redirect.spec.ts` — confirms the middleware redirects
+  unauthenticated traffic to `/login` and that `/login` is reachable
+  directly. No credentials needed.
+
+Run locally against the dev server:
+
+```bash
+pnpm test:e2e
+```
+
+Run against production (no local dev server boot — Playwright detects
+the external `BASE_URL` and skips `webServer`):
+
+```bash
+BASE_URL=https://contracts.dobeu.tech pnpm test:e2e
+```
+
+### The dedicated e2e Supabase user
+
+Create one Supabase auth user (`Authentication → Users → Add user`) with
+a memorable email like `e2e-test@dobeu.tech` and a strong password.
+Store both as GitHub repo secrets (`E2E_TEST_EMAIL`,
+`E2E_TEST_PASSWORD`). Don't reuse a real human's account — the e2e
+tests sign in and out repeatedly.
+
 ## Credential rotation
 
 In production, all four of these credentials should be on a rotation
@@ -176,6 +295,7 @@ picked up by existing functions until the next build.
 
 ```
 .github/
+  workflows/ci.yml            # GitHub Actions: lint/typecheck/test/build + e2e
   copilot-instructions.md     # binding rules for every Copilot prompt
 src/
   app/                        # Next.js App Router (UI lands here, Phase 1+)
@@ -184,11 +304,18 @@ src/
     pricing/                  # PURE pricing engine + types + tests (do not touch
                               # without updating engine.test.ts — order of
                               # operations is contractual)
+    supabase/                 # browser/server/middleware Supabase clients
+                              # + middleware.test.ts
+e2e/                          # Playwright specs
 supabase/
   config.toml                 # Supabase CLI local config (linked to remote)
   migrations/0001_init.sql    # initial schema, all in dts.*
 docs/
   SETUP.md                    # this file
+sentry.{client,server,edge}.config.ts   # Sentry SDK init for each runtime
+instrumentation.ts            # Next.js instrumentation hook (loads Sentry)
+playwright.config.ts          # Playwright config
+vitest.config.ts              # Vitest config (excludes e2e/)
 .vercel/project.json          # links repo to the Vercel project (no secrets)
 ```
 
@@ -206,11 +333,15 @@ issue. Bypassing is reserved for genuine emergencies.
 
 ## Where to look when things break
 
-| Symptom                                                    | Likely cause                                                                                                       |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `PGRST106 Invalid schema: dts` from any Supabase call      | `dts` not in exposed schemas list (see above)                                                                      |
-| Query returns 0 rows when data exists                      | Forgot `.schema('dts')` on the client; querying `public`                                                           |
-| Vercel build fails with env-var missing                    | Env var unset; check `pnpm exec vercel env ls production`                                                          |
-| Vercel deploy URL shows "Authentication Required"          | Deployment Protection / SSO is on — see Vercel deployment section above                                            |
-| `pnpm supabase db push` complains about unknown migrations | Foreign app's history; use Path A above instead                                                                    |
-| Form components missing                                    | `pnpm dlx shadcn@latest add form` is silently broken on shadcn 4.4 + RHF 7.73 — hand-port from the registry source |
+| Symptom                                                    | Likely cause                                                                                                                  |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PGRST106 Invalid schema: dts` from any Supabase call      | `dts` not in exposed schemas list (see above)                                                                                 |
+| Query returns 0 rows when data exists                      | Forgot `.schema('dts')` on the client; querying `public`                                                                      |
+| Vercel build fails with env-var missing                    | Env var unset; check `pnpm exec vercel env ls production`                                                                     |
+| Vercel deploy URL shows "Authentication Required"          | Deployment Protection / SSO is on — see Vercel deployment section above                                                       |
+| Custom domain shows SSO challenge                          | `ssoProtection.deploymentType` is not `all_except_custom_domains` — see Custom domain section above                           |
+| `pnpm supabase db push` complains about unknown migrations | Foreign app's history; use Path A above instead                                                                               |
+| Form components missing                                    | `pnpm dlx shadcn@latest add form` is silently broken on shadcn 4.4 + RHF 7.73 — hand-port from the registry source            |
+| `eslint-config-next` errors with rushstack patch failure   | Don't reintroduce `eslint-config-next` — we use `@next/eslint-plugin-next` directly via flat config (see `eslint.config.mjs`) |
+| Sentry events not arriving from production                 | Check `SENTRY_DSN` and `SENTRY_AUTH_TOKEN` are set in Vercel envs and the build emitted source maps                           |
+| e2e tests skip silently in CI                              | `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` GH Actions secrets are missing                                                         |
