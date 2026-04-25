@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(pnpm --version)",
+      "PowerShell(pnpm *)",
+      "PowerShell(corepack *)"
+    ]
+  }
+}
