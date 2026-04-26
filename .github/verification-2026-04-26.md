@@ -88,7 +88,7 @@ redirect confirms the deploy is healthy.
    service-role key, and anon key were exposed in the bootstrap transcript. Rotate
    before going public (see the rotation table in `docs/SETUP.md`).
 
-2. **Sentry `global-error.js`** — the production build emits a Sentry deprecation warning
+2. **Sentry `global-error.tsx`** — the production build emits a Sentry deprecation warning
    recommending a `global-error.tsx` file for React rendering error capture. Not a blocker,
    but worth adding in a follow-up.
 
