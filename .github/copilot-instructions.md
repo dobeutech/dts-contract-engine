@@ -1,125 +1,133 @@
 # Copilot Instructions — DTS Contract Engine
 
-You are working on a contract & consulting-hour management application for
-**Dobeu Tech Solutions, LLC**. Read this file fully before every change.
+Read this file before making changes. It captures the project-specific rules that are easy to miss by looking at one file at a time.
 
-## Mission
+## Build, test, and lint
 
-Replace ad-hoc Word/PDF contracts and uncounted consulting hours with a
-single system that:
+This repo uses **pnpm** scripts from `package.json`.
 
-1. Generates pricing-correct quotes from a configurable engine
-2. Issues legally-formatted contract PDFs with embedded SLA appendices
-3. Routes contracts through DocuSeal for e-signature
-4. Logs every minute of consulting work against client SLA budgets
-5. Auto-flags overages on the next invoice (which the operator can waive
-   at their discretion)
+```bash
+pnpm dev
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:watch
+pnpm test:ui
+pnpm format
+```
 
-## Non-Negotiable Rules
+Run the current unit test file directly with:
 
-1. **Pricing logic lives server-side only.** The client never receives
-   cost basis, multiplier definitions, or discount caps. Only computed
-   totals. Implement as Server Actions in `src/lib/pricing/engine.ts`.
+```bash
+pnpm test -- src\lib\pricing\engine.test.ts
+```
 
-2. **The high-touch buffer is invisible on contract output.** When a
-   quote has `multipliers.highTouch > 0`, the retainer is inflated by
-   that percentage but rendered on the contract PDF as a single
-   "Monthly Retainer" line with no buffer disclosure.
+Run one named Vitest case with:
 
-3. **The family courtesy IS visible on contract output.** When a quote
-   has `multipliers.familyCourtesy > 0`, render it as a discrete line
-   item with the time-limit disclosure: "Family Relationship Courtesy
-   −$X (first 6 months, reviewed at renewal)".
+```bash
+pnpm test -- -t "Growth tier baseline = $3,500/mo" src\lib\pricing\engine.test.ts
+```
 
-4. **Rush premium applies to setup only.** Never apply rush to monthly
-   retainer.
+Pre-commit runs `pnpm lint-staged`, which applies Prettier and ESLint to staged files.
 
-5. **Term discounts apply BEFORE family courtesy.** Order of operations:
-   `(base + recurring) × (1 + highTouch) × (1 - termDiscount) × (1 - familyCourtesy)`
+## High-level architecture
 
-6. **All currency stored as integer cents in DB.** Display layer formats.
+### Runtime shape
 
-7. **Row Level Security is mandatory.** Every table has RLS enabled.
-   Only the agency owner (auth.uid()) can read/write operational data.
-   Client portal access is via signed JWT tokens scoped to a single
-   client_id, never via Supabase auth.
+- This is a **Next.js 15 App Router** app with React 19 and TypeScript strict mode.
+- `src/app/layout.tsx` sets the global shell and fonts.
+- `src/app/login/page.tsx` is a server component that redirects authenticated users away from `/login`.
+- `src/app/login/login-form.tsx` is the main client-side auth UI and uses the browser Supabase client for password sign-in.
+- `src/app/page.tsx` is currently a bootstrap shell for authenticated users.
+- `src/app/auth/signout/route.ts` signs users out server-side.
+- `src/middleware.ts` delegates to `src/lib/supabase/middleware.ts`, which refreshes Supabase auth cookies on every request and redirects unauthenticated users to `/login`.
 
-7a. **All tables live in the `dts` Postgres schema.** The Supabase
-project is shared with other apps (the unified-ai instance), so
-every Supabase client call MUST use `.schema('dts')`:
-`supabase.schema('dts').from('clients').select(...)`.
-Never put project tables in `public`. New migrations must qualify
-every object with `dts.`.
+### Auth and data boundaries
 
-8. **Audit log every pricing config change.** A diff between old and
-   new config is written to `audit_log` on every update.
+- Supabase auth is wired with `@supabase/ssr`.
+- Use `src/lib/supabase/server.ts` in Server Components, Server Actions, and route handlers.
+- Use `src/lib/supabase/browser.ts` only inside `"use client"` components.
+- Do **not** remove the `supabase.auth.getUser()` call from middleware; it is the session refresh trigger.
 
-9. **Never delete; always soft-delete.** Use `deleted_at` columns, not
-   `DELETE` statements. Quotes and contracts are legal records.
+### Domain core
 
-10. **Use Server Actions over API routes** unless an external webhook
-    forces an API route (`/api/webhooks/*`). No tRPC unless explicitly
-    needed; Server Actions are sufficient.
+- The pricing engine in `src/lib/pricing/` is the most mature business logic in the repo.
+- `types.ts` defines the shared pricing shapes.
+- `config.ts` is the default in-repo pricing configuration; production is expected to load config from the database.
+- `engine.ts` is a pure deterministic calculator with no I/O.
+- `engine.test.ts` locks the contractual order of operations and is the source of truth for pricing behavior changes.
 
-## Architecture Boundaries
+### Database contract
 
-- `src/app/(app)/*` — authenticated agency-side UI
-- `src/app/client-portal/[token]/*` — read-only client-side UI (no auth,
-  signed token in URL)
-- `src/app/api/webhooks/*` — DocuSeal, Stripe, Calendar webhooks only
-- `src/lib/pricing/*` — pure functions, no I/O, fully unit-tested
-- `src/lib/supabase/*` — server and browser clients, RLS-aware
-- `src/lib/pdf/*` — `@react-pdf/renderer` components
-- `src/lib/integrations/*` — DocuSeal, Stripe, Resend, Customer.io clients
+- The database shape lives in `supabase/migrations/0001_init.sql`.
+- All project tables live in the **`dts` Postgres schema**, not `public`.
+- Core tables are `agency_settings`, `pricing_config`, `clients`, `quotes`, `contracts`, `consulting_log`, `invoices`, and `audit_log`.
+- RLS is enabled on every table.
+- Quotes and client records are soft-deleted with `deleted_at`; they are not meant to be hard deleted.
+- The current `supabase/config.toml` only exposes `public` and `graphql_public` locally; for real PostgREST use, `dts` must also be exposed as documented in `docs/SETUP.md`.
 
-## Brand & Aesthetic
+## Key conventions
 
-- **Fonts:** Fraunces (display) + Geist (body) + Geist Mono (numbers).
-  Never use Inter, Roboto, or system-ui as primary fonts.
-- **Palette:** Navy `#0A2540` primary, Electric Blue `#2563EB`, Cyan
-  `#06B6D4`, Paper `#FAFAF7`. CSS variables only — no hardcoded hex
-  outside `globals.css`.
-- **Numbers:** Always tabular figures (`font-variant-numeric: tabular-nums`).
-- **Contracts on screen and on print must look identical.** Use the
-  same React Components for both; differentiate via `@media print` and
-  `@react-pdf/renderer` parallel components.
+### Framework and repo conventions
 
-## Coding Standards
+- This project is on **Next.js 15.5.x**. Before changing framework-level behavior, read the relevant guide under `node_modules/next/dist/docs/` as noted in `CLAUDE.md`.
+- Use the `@/*` path alias from `tsconfig.json`.
+- UI primitives come from `src/components/ui` and follow the committed `components.json` shadcn setup (`base-nova`, Tailwind CSS v4, CSS variables enabled).
 
-- TypeScript strict mode. No `any`. No `// @ts-ignore` without an
-  attached issue link.
-- Zod schemas for all form input and webhook payloads. Infer types from
-  schemas, don't redefine.
-- Server Actions return `{ data, error }` — never throw to the client.
-- Every Server Action validates auth before doing work.
-- Files over 250 lines must be split.
-- Components colocate their tests: `Quote.tsx` → `Quote.test.tsx`.
-- Run `pnpm lint && pnpm typecheck && pnpm test` before committing.
+### Pricing rules
 
-## Git Hygiene
+These rules come from the existing project instructions and pricing engine tests:
 
-- Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
-  `test:`.
-- One feature per PR. Do not stack unrelated changes.
-- Include a `## Testing` section in every PR description.
+1. Pricing logic stays server-side; do not expose multipliers, raw config, or cost logic in client bundles.
+2. `src/lib/pricing/*` stays pure and free of network/database access.
+3. All currency is stored and computed as integer cents; formatting belongs in the display layer.
+4. Rush premium applies to setup only.
+5. Retainer math order is: high-touch buffer -> term discount -> family courtesy.
+6. The high-touch buffer affects totals but is intentionally not disclosed as a separate contract line item.
+7. Family courtesy is a visible contract line item with the time-limit disclosure.
 
-## What Already Exists
+If you change pricing math, update `engine.test.ts` in the same change.
 
-- A working artifact prototype with the calculation engine and pricing
-  config. The TypeScript port is in `src/lib/pricing/`. Trust those
-  numbers as the source of truth.
-- A signed reference contract for "Unique Staffing Professionals" that
-  demonstrates the contract structure DTS uses.
+### Supabase conventions
 
-## What You Should NOT Do
+1. Every project-table query must use `.schema("dts")`.
+2. Do not set a global Supabase schema in the client helpers; auth still needs the `auth.*` schema.
+3. The shared remote Supabase project also hosts other apps, so remote migration work is not a standard greenfield flow. Read `docs/SETUP.md` before using `supabase db push` against the shared project.
 
-- Do not introduce new pricing models without explicit instruction.
-- Do not add new dependencies without justification in the PR body.
-- Do not implement client-side PDF generation (jsPDF, html2canvas).
-  PDFs are server-rendered.
-- Do not write logic that exposes pricing config or multipliers in
-  client bundles.
-- Do not add LocalStorage, SessionStorage, IndexedDB, or any other
-  client-side persistence. Source of truth is Supabase.
-- Do not implement role-based access yet. Single-owner mode for v1;
-  add roles in v2.
+### App-layer conventions
+
+1. Prefer **Server Actions over API routes** unless integrating an external webhook.
+2. Server Actions should return `{ data, error }` rather than throw to client code.
+3. Validate auth before any server-side write.
+4. Use Zod for form input and webhook payload validation.
+5. Keep tests colocated with the code they cover.
+
+### Deployment and environment conventions
+
+1. Deployment targets **Vercel**, and the repo is already linked through `.vercel/project.json`.
+2. The real deployment runbook is `docs/SETUP.md`, not the default `README.md`.
+3. After changing server-side environment variables, redeploy; Vercel env changes do not affect existing deployments until the next build.
+4. Expected environment variables come from `.env.example` and already anticipate Supabase, DocuSeal, Stripe, Resend, Customer.io, and client-portal token signing.
+5. Vercel SSO / Deployment Protection can block previews and the default production URL. If a deploy works but the site is gated, check the SSO settings before debugging the app itself.
+
+### Webhook and integration boundaries
+
+1. Middleware intentionally leaves `/api/webhooks/*` public; use that namespace for external providers only.
+2. Keep inbound third-party handlers narrow and provider-specific, e.g. DocuSeal signature events, Stripe billing events, calendar/logging events.
+3. Validate webhook payloads and signature secrets before any side effects.
+4. Treat webhook routes as ingestion adapters only: parse -> verify -> hand off to server-side business logic.
+5. External-service clients should live in focused modules under a future `src/lib/integrations/*` area rather than being embedded directly in route handlers or UI code.
+6. The schema already reserves integration touchpoints: `contracts.signature_provider*`, `invoices.stripe_invoice_id`, `consulting_log.source/source_ref`, and client portal token fields.
+7. Client portal access is intended to be token-scoped to a single client, not backed by general Supabase auth for end clients.
+
+### Styling and brand conventions
+
+1. Use CSS variables from `src/app/globals.css`; do not scatter one-off color values through components.
+2. Current fonts are Geist and Geist Mono from `src/app/layout.tsx`.
+3. Numeric displays should keep tabular-number styling where relevant to pricing and contract screens.
+
+## Additional project context worth trusting
+
+- `docs/SETUP.md` contains the real environment and deployment notes, including the shared Supabase-project caveats and Vercel linkage.
+- `README.md` is still the default create-next-app README and is not the source of truth for this project.

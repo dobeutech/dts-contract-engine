@@ -3,9 +3,27 @@
     "allow": [
       "Bash(gh auth *)",
       "Bash(gh repo *)",
-      "Bash(pnpm --version)",
+      "Bash(git add *)",
+      "Bash(git branch *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(git restore *)",
+      "Bash(curl *)",
+      "Bash(gh api *)",
+      "Bash(node *)",
+      "Bash(node -e ' *)",
+      "Bash(npm view *)",
+      "Bash(pnpm why *)",
+      "Bash(pnpm exec netlify *)",
+      "PowerShell(corepack *)",
       "PowerShell(pnpm *)",
-      "PowerShell(corepack *)"
+      "PowerShell(pnpm exec *)",
+      "PowerShell(pnpm exec netlify *)",
+      "PowerShell(pnpm exec vercel *)",
+      "Skill(schedule)",
+      "Bash(codex --version)",
+      "Bash(gemini --version)"
     ]
   }
 }
