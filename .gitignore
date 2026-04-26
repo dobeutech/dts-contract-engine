@@ -54,3 +54,6 @@ next-env.d.ts
 # agent and worktrees
 .agent/
 .claude/worktrees/
+
+# scratch commit message file
+.git-commit-msg.txt

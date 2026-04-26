@@ -6,7 +6,8 @@ describe("isPublicRoute", () => {
     ["/login", true],
     ["/login/", true],
     ["/auth/signout", true],
-    ["/api/webhooks/docuseal", true],
+    ["/api/webhooks/adobe-sign", true],
+    ["/portal/abc123", true],
     ["/_next/static/chunks/main.js", true],
     ["/", false],
     ["/clients", false],
@@ -21,6 +22,7 @@ describe("isPublicRoute", () => {
       "/login",
       "/auth",
       "/api/webhooks",
+      "/portal",
       "/_next",
     ]);
   });

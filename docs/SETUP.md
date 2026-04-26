@@ -32,9 +32,11 @@ depends on three things:
    (Dashboard → Project Settings → API → Data API Settings → Exposed schemas).
    Without this, every PostgREST query returns `PGRST106 Invalid schema: dts`.
 3. Every Supabase client call uses `.schema('dts')`:
+
    ```ts
    supabase.schema("dts").from("clients").select("*");
    ```
+
    This is enforced by Copilot rule 7a in `.github/copilot-instructions.md`.
    The Supabase JS client defaults to `public`; forgetting the `.schema()`
    call will silently query (or fail to find) the wrong tables.
@@ -88,6 +90,9 @@ Project is `dts-contract-engine` under the **dobeutech-7910s-projects** team.
   - `NEXT_PUBLIC_SUPABASE_URL` — plain text, all targets
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — plain text, all targets
   - `SUPABASE_SERVICE_ROLE_KEY` — encrypted, production+preview only
+  - `ADOBE_SIGN_BASE_URI` — Adobe Sign account base URI (for example `https://api.na1.adobesign.com`)
+  - `ADOBE_SIGN_INTEGRATION_KEY` — Adobe Sign integration key
+  - `ADOBE_SIGN_WEBHOOK_CLIENT_ID` — expected `X-AdobeSign-ClientId` header value
 
 The repo is linked via `.vercel/project.json` (committed since it has no
 secrets — only project + team IDs). `vercel` CLI auto-detects the link
@@ -210,7 +215,7 @@ builds stay clean.
 
 Required env vars (set in Vercel for production+preview):
 
-```
+```bash
 SENTRY_DSN              # https://<key>@<org>.ingest.sentry.io/<project>
 NEXT_PUBLIC_SENTRY_DSN  # same value, exposed to the browser SDK
 SENTRY_ORG              # e.g. dobeu-tech
@@ -293,7 +298,7 @@ picked up by existing functions until the next build.
 
 ## Repository layout (the parts that matter)
 
-```
+```text
 .github/
   workflows/ci.yml            # GitHub Actions: lint/typecheck/test/build + e2e
   copilot-instructions.md     # binding rules for every Copilot prompt
