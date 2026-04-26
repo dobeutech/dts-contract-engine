@@ -8,7 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -48,73 +48,106 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Dobeu Design System - Dark Mode Default */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Primitives */
+  --brand-indigo-primary: #6b5ce7;
+  --brand-indigo-deep: #4a3fa8;
+  --brand-amber-warm: #f4a261;
+  --brand-cream-soft: #fff8f0;
+  --brand-dark-surface: #1a1a2e;
+  --brand-dark-elevated: #242440;
+  --brand-code-bg-light: #f5f5f7;
+  --brand-code-bg-dark: #0d0d1a;
+  --brand-text-gray: #2d2d3a;
+  --brand-body-text-dark: #e0e0e0;
+  --brand-tint-indigo-10: #e8e5fa;
+  --brand-tint-amber-10: #fef0e0;
+  --brand-neutral-gray: #f5f5f7;
+  --brand-border-light: #e0dff5;
+  --brand-border-dark: #2a2a45;
+  --semantic-success: #4caf50;
+  --semantic-warning: #f4a261;
+  --semantic-error: #e07a5f;
+  --neutral-white: #ffffff;
+  --neutral-black: #000000;
+
+  /* Type primitives */
+  --font-sans:
+    var(--font-nunito), "Quicksand", ui-sans-serif, system-ui, -apple-system,
+    sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii */
+  --radius: 0.75rem; /* 12px default for md */
+
+  /* Default to Dark Mode (Developer-first) */
+  --background: var(--brand-dark-surface);
+  --foreground: var(--neutral-white);
+  --card: var(--brand-dark-elevated);
+  --card-foreground: var(--neutral-white);
+  --popover: var(--brand-dark-elevated);
+  --popover-foreground: var(--neutral-white);
+  --primary: var(--brand-amber-warm); /* CTA in dark mode */
+  --primary-foreground: var(--brand-text-gray);
+  --secondary: var(--brand-dark-elevated);
+  --secondary-foreground: var(--neutral-white);
+  --muted: var(--brand-dark-elevated);
+  --muted-foreground: #9a9ab0;
+  --accent: var(--brand-amber-warm);
+  --accent-foreground: var(--brand-text-gray);
+  --destructive: var(--semantic-error);
+  --border: var(--brand-border-dark);
+  --input: var(--brand-border-dark);
+  --ring: rgba(107, 92, 231, 0.22); /* Indigo ring */
+
+  /* Charts (using Dobeu palette) */
+  --chart-1: var(--brand-indigo-primary);
+  --chart-2: var(--brand-amber-warm);
+  --chart-3: var(--semantic-success);
+  --chart-4: var(--semantic-warning);
+  --chart-5: var(--semantic-error);
+
+  /* Sidebar */
+  --sidebar: var(--brand-dark-elevated);
+  --sidebar-foreground: var(--neutral-white);
+  --sidebar-primary: var(--brand-amber-warm);
+  --sidebar-primary-foreground: var(--brand-text-gray);
+  --sidebar-accent: var(--brand-dark-surface);
+  --sidebar-accent-foreground: var(--neutral-white);
+  --sidebar-border: var(--brand-border-dark);
+  --sidebar-ring: rgba(107, 92, 231, 0.22);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+.light {
+  --background: var(--neutral-white);
+  --foreground: var(--brand-text-gray);
+  --card: var(--brand-cream-soft);
+  --card-foreground: var(--brand-text-gray);
+  --popover: var(--neutral-white);
+  --popover-foreground: var(--brand-text-gray);
+  --primary: var(--brand-indigo-primary); /* CTA in light mode */
+  --primary-foreground: var(--neutral-white);
+  --secondary: var(--brand-neutral-gray);
+  --secondary-foreground: var(--brand-text-gray);
+  --muted: var(--brand-neutral-gray);
+  --muted-foreground: #888888;
+  --accent: var(--brand-indigo-primary);
+  --accent-foreground: var(--neutral-white);
+  --destructive: var(--semantic-error);
+  --border: var(--brand-border-light);
+  --input: var(--brand-border-light);
+  --ring: rgba(107, 92, 231, 0.22);
+
+  --sidebar: var(--brand-cream-soft);
+  --sidebar-foreground: var(--brand-text-gray);
+  --sidebar-primary: var(--brand-indigo-primary);
+  --sidebar-primary-foreground: var(--neutral-white);
+  --sidebar-accent: var(--brand-neutral-gray);
+  --sidebar-accent-foreground: var(--brand-text-gray);
+  --sidebar-border: var(--brand-border-light);
+  --sidebar-ring: rgba(107, 92, 231, 0.22);
 }
 
 @layer base {
@@ -123,8 +156,46 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   html {
     @apply font-sans;
+  }
+
+  /* Dobeu Typography Overrides */
+  h1,
+  .h1 {
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--brand-indigo-primary);
+  }
+  h2,
+  .h2 {
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    color: var(--brand-indigo-primary);
+  }
+  h3,
+  .h3 {
+    font-weight: 700;
+    color: var(--brand-indigo-primary);
+  }
+  h4,
+  .h4 {
+    font-weight: 700;
+    color: var(--brand-indigo-primary);
+  }
+
+  .light h1,
+  .light .h1,
+  .light h2,
+  .light .h2,
+  .light h3,
+  .light .h3,
+  .light h4,
+  .light .h4 {
+    color: var(--brand-indigo-deep);
   }
 }

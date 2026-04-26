@@ -7,6 +7,7 @@ export const PUBLIC_PATH_PREFIXES = [
   "/login",
   "/auth",
   "/api/webhooks",
+  "/portal",
   "/_next",
 ] as const;
 
