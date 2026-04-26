@@ -1,7 +1,7 @@
 # Production Launch Checklist — DTS Contract Engine
 
 Date: 2026-04-26
-Owner: jswilliamstu@gmail.com
+Owner: <jswilliamstu@gmail.com>
 
 This document consolidates the launch requirements for taking the DTS Contract Engine from its current bootstrap shell to a fully operational product at `contracts.dobeu.tech`. It covers the execution of Phase 1 (Quote Machine), Phase 2 (Adobe Sign + Stripe), and Phase 3 (Intercom Fin).
 
