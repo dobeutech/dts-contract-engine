@@ -197,6 +197,31 @@ In the Supabase dashboard for the `unified-ai` project: **Authentication
 
 `NEXT_PUBLIC_APP_URL` in Vercel env should match: `https://contracts.dobeu.tech`.
 
+### Google OAuth (the "Continue with Google" button)
+
+The login page exposes a Google SSO button alongside the email/password
+form. Until the provider is enabled in Supabase, clicking it surfaces a
+"Google sign-in is not yet enabled" error — the email path keeps working.
+
+Enable in three steps:
+
+1. **Google Cloud OAuth client.** In the Google Cloud Console for the
+   project that hosts the OAuth consent screen, create a Web Application
+   OAuth 2.0 Client ID. Authorized JavaScript origins: `https://contracts.dobeu.tech`.
+   Authorized redirect URI: `https://qdwvcrmdqweojverdmmz.supabase.co/auth/v1/callback`
+   (Supabase's hosted callback — **not** the app's `/auth/callback`).
+2. **Supabase provider.** Dashboard → Authentication → Providers → Google.
+   Toggle on, paste the Client ID + Client Secret from step 1. Save.
+3. **App callback.** No code change needed; `src/app/auth/callback/route.ts`
+   already exchanges the code Supabase forwards back. Confirm
+   `https://contracts.dobeu.tech/auth/callback` is on the redirect-URL
+   allowlist (it should be, since `https://contracts.dobeu.tech/**` covers it).
+
+After enabling, sign-in flow is: button → Google consent screen →
+Supabase code exchange → `/auth/callback` → `/`. Restrict who can sign in
+by limiting the Google Workspace domain in the OAuth consent screen, or
+by adding an `auth.users` allowlist trigger on Supabase.
+
 ## Sentry
 
 Error monitoring is wired through `@sentry/nextjs`. Three init files —
