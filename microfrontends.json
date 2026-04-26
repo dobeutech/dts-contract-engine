@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/microfrontends.json",
+  "applications": {
+    "dts-contract-engine": {
+      "development": {
+        "fallback": "contracts.dobeu.tech"
+      }
+    }
+  }
+}
