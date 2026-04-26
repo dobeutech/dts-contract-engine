@@ -34,7 +34,10 @@ export async function POST(req: Request) {
       const session = event.data.object as Stripe.Checkout.Session;
       const quoteId = session.metadata?.quote_id;
       const clientId = session.metadata?.client_id;
-      if (quoteId && clientId) {
+      // Only process deposit payments from this app; ignore unrelated sessions.
+      const isDeposit = session.metadata?.kind === "dts.deposit";
+      const isPaid = session.payment_status === "paid";
+      if (quoteId && clientId && isDeposit && isPaid) {
         const supabase = createServiceClient();
 
         await supabase
@@ -91,7 +94,12 @@ export async function POST(req: Request) {
         message: e instanceof Error ? e.message : String(e),
       },
     });
-    // Return 200 anyway so Stripe doesn't retry forever for handler bugs.
+    // Return 5xx so Stripe retries transient failures (DB down, etc.).
+    // The handler is idempotent: duplicate events are safe to process.
+    return NextResponse.json(
+      { ok: false, error: "processing_error" },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ received: true });

@@ -5,7 +5,10 @@ import { findClientByToken, getPortalQuote } from "@/lib/db/portal";
 import { getPricingConfig } from "@/lib/db/pricing-config";
 import { recordAudit } from "@/lib/db/audit";
 import { buildContractPdf } from "@/lib/integrations/pdf";
-import { createAgreement } from "@/lib/integrations/adobe-sign";
+import {
+  createAgreement,
+  getSigningUrlForAgreement,
+} from "@/lib/integrations/adobe-sign";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export async function startSigningAction(
@@ -28,76 +31,115 @@ export async function startSigningAction(
   if (quote.status !== "sent")
     return fail("This quote can't be signed in its current state.", "conflict");
 
-  const configRow = await getPricingConfig(quote.pricing_config_id);
-  if (!configRow) return fail("Pricing config missing", "internal_error");
-
-  let pdf: Buffer;
-  try {
-    pdf = await buildContractPdf({ quote, client, config: configRow.config });
-  } catch (e) {
-    return fail(
-      e instanceof Error
-        ? `PDF build failed: ${e.message}`
-        : "PDF build failed",
-    );
-  }
-
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ?? "https://contracts.dobeu.tech";
   const redirectUrl = `${baseUrl}/portal/${token}/${quoteId}/signed`;
 
-  let agreement;
-  try {
-    agreement = await createAgreement({
-      pdf,
-      pdfFileName: `dobeu-contract-${quote.id.slice(0, 8)}.pdf`,
-      agreementName: `${client.company} — ${quote.project_name ?? quote.project_type}`,
-      signerEmail: client.email,
-      signerName: client.contact_name ?? client.company,
-      redirectUrl,
-      webhookEnabled: true,
-    });
-  } catch (e) {
-    return fail(
-      e instanceof Error
-        ? `Adobe Sign error: ${e.message}`
-        : "Adobe Sign error",
-    );
-  }
-
   const supabase = createServiceClient();
-  const { data: contract, error: contractErr } = await supabase
+
+  // Idempotency: reuse an existing pending contract/agreement for this quote
+  // so repeated clicks don't create duplicate Adobe Sign agreements.
+  const { data: existingContract } = await supabase
     .schema("dts")
     .from("contracts")
-    .insert({
-      quote_id: quote.id,
-      version: 1,
-      signature_provider: "adobe_sign",
-      signature_provider_ref: agreement.agreementId,
-    })
-    .select("id")
-    .single();
-  if (contractErr) {
-    return fail(`Failed to record contract: ${contractErr.message}`);
+    .select("id, signature_provider_ref")
+    .eq("quote_id", quote.id)
+    .is("signed_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let contractId: string;
+  let signingUrl: string | null;
+
+  if (existingContract?.signature_provider_ref) {
+    // Reuse the existing agreement — just fetch a fresh signing URL.
+    contractId = existingContract.id as string;
+    try {
+      signingUrl = await getSigningUrlForAgreement(
+        existingContract.signature_provider_ref as string,
+      );
+    } catch (e) {
+      return fail(
+        e instanceof Error
+          ? `Adobe Sign error: ${e.message}`
+          : "Adobe Sign error",
+      );
+    }
+  } else {
+    // First time: build the PDF, create the Adobe Sign agreement, and record
+    // the contract row.
+    const configRow = await getPricingConfig(quote.pricing_config_id);
+    if (!configRow) return fail("Pricing config missing", "internal_error");
+
+    let pdf: Buffer;
+    try {
+      pdf = await buildContractPdf({ quote, client, config: configRow.config });
+    } catch (e) {
+      return fail(
+        e instanceof Error
+          ? `PDF build failed: ${e.message}`
+          : "PDF build failed",
+      );
+    }
+
+    let agreement;
+    try {
+      agreement = await createAgreement({
+        pdf,
+        pdfFileName: `dobeu-contract-${quote.id.slice(0, 8)}.pdf`,
+        agreementName: `${client.company} — ${quote.project_name ?? quote.project_type}`,
+        signerEmail: client.email,
+        signerName: client.contact_name ?? client.company,
+        redirectUrl,
+        webhookEnabled: true,
+      });
+    } catch (e) {
+      return fail(
+        e instanceof Error
+          ? `Adobe Sign error: ${e.message}`
+          : "Adobe Sign error",
+      );
+    }
+
+    const { data: newContract, error: contractErr } = await supabase
+      .schema("dts")
+      .from("contracts")
+      .insert({
+        quote_id: quote.id,
+        version: 1,
+        signature_provider: "adobe_sign",
+        signature_provider_ref: agreement.agreementId,
+      })
+      .select("id")
+      .single();
+    if (contractErr) {
+      return fail(`Failed to record contract: ${contractErr.message}`);
+    }
+    contractId = newContract.id;
+    signingUrl = agreement.signingUrl;
+
+    const { error: quoteUpdateErr } = await supabase
+      .schema("dts")
+      .from("quotes")
+      .update({ status: "sent" }) // remains 'sent' until webhook flips to 'signed'
+      .eq("id", quote.id)
+      .eq("status", "sent"); // guard: only update if still in 'sent' state
+    if (quoteUpdateErr) {
+      return fail(`Failed to update quote: ${quoteUpdateErr.message}`);
+    }
+
+    await recordAudit({
+      actorId: null,
+      action: "quote.move_forward",
+      entityType: "quote",
+      entityId: quote.id,
+      diff: { contractId, agreementId: agreement.agreementId },
+    });
   }
-
-  await supabase
-    .schema("dts")
-    .from("quotes")
-    .update({ status: "sent" }) // remain 'sent' until webhook flips to 'signed'
-    .eq("id", quote.id);
-
-  await recordAudit({
-    actorId: null,
-    action: "quote.move_forward",
-    entityType: "quote",
-    entityId: quote.id,
-    diff: { contractId: contract?.id, agreementId: agreement.agreementId },
-  });
 
   return ok({
     signingUrl:
-      agreement.signingUrl ??
-      `${baseUrl}/portal/${token}/${quoteId}?awaiting=email`,
+      signingUrl ?? `${baseUrl}/portal/${token}/${quoteId}?awaiting=email`,
   });
 }

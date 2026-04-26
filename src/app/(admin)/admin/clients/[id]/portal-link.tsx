@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { ActionResult } from "@/lib/actions/result";
@@ -17,9 +17,14 @@ export function ClientPortalLink({ clientId, token, rotateAction }: Props) {
   const [current, setCurrent] = useState(token);
   const [isPending, startTransition] = useTransition();
 
-  const url = current
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/portal/${current}`
-    : null;
+  const [origin, setOrigin] = useState("");
+
+  // Compute origin client-side only to avoid SSR/hydration mismatch.
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const url = current && origin ? `${origin}/portal/${current}` : null;
 
   function copy() {
     if (!url) return;

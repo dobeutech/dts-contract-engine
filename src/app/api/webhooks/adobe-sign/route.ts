@@ -129,6 +129,18 @@ export async function POST(req: Request) {
           message: e instanceof Error ? e.message : String(e),
         },
       });
+      // Return 5xx so Adobe Sign retries transient failures (storage down, etc.).
+      // The handler is idempotent (upsert on storage, status check on DB).
+      return new NextResponse(
+        JSON.stringify({ ok: false, error: "processing_error" }),
+        {
+          status: 500,
+          headers: {
+            "X-AdobeSign-ClientId": clientIdHeader as string,
+            "Content-Type": "application/json",
+          },
+        },
+      );
     }
   } else {
     await recordAudit({

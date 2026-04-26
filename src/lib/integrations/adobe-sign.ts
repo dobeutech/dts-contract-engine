@@ -140,6 +140,23 @@ export async function createAgreement(
   return { agreementId: json.id, signingUrl };
 }
 
+// Fetch the current signing URL for an existing agreement (e.g. when the
+// client clicks "sign" a second time and we already have a contract row).
+export async function getSigningUrlForAgreement(
+  agreementId: string,
+): Promise<string | null> {
+  const sUrl = await adobeFetch(
+    `/api/rest/v6/agreements/${agreementId}/signingUrls`,
+  );
+  if (!sUrl.ok) return null;
+  const sJson = (await sUrl.json()) as {
+    signingUrlSetInfos?: Array<{
+      signingUrls?: Array<{ esignUrl?: string }>;
+    }>;
+  };
+  return sJson.signingUrlSetInfos?.[0]?.signingUrls?.[0]?.esignUrl ?? null;
+}
+
 // Download the signed PDF after webhook fires AGREEMENT_WORKFLOW_COMPLETED.
 export async function downloadSignedPdf(agreementId: string): Promise<Buffer> {
   const res = await adobeFetch(

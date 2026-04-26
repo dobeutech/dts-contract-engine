@@ -20,6 +20,12 @@ export async function createDepositCheckoutAction(
   if (!quote) return fail("Quote not found", "not_found");
   if (!quote.calc?.depositAmountCents)
     return fail("This quote has no deposit configured.", "conflict");
+  // Guard: only allow checkout after Adobe Sign has confirmed signing.
+  if (quote.status !== "signed")
+    return fail(
+      "The contract must be signed before paying the deposit.",
+      "conflict",
+    );
 
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ?? "https://contracts.dobeu.tech";
@@ -50,7 +56,6 @@ export async function createDepositCheckoutAction(
       metadata: {
         quote_id: quote.id,
         client_id: client.id,
-        portal_token: token,
         kind: "dts.deposit",
       },
       payment_intent_data: {
