@@ -81,7 +81,12 @@ function FormItem({
 
   return (
     <FormItemContext.Provider value={{ id }}>
-      <div ref={ref} className={cn("space-y-2", className)} {...props} />
+      <div
+        data-slot="form-item"
+        ref={ref}
+        className={cn("space-y-2", className)}
+        {...props}
+      />
     </FormItemContext.Provider>
   );
 }
@@ -97,6 +102,7 @@ function FormLabel({
 
   return (
     <Label
+      data-slot="form-label"
       ref={ref}
       className={cn(error && "text-destructive", className)}
       htmlFor={formItemId}
@@ -116,6 +122,7 @@ function FormControl({
 
   return (
     <Slot
+      data-slot="form-control"
       ref={ref}
       id={formItemId}
       aria-describedby={
@@ -138,6 +145,7 @@ function FormDescription({
 
   return (
     <p
+      data-slot="form-description"
       ref={ref}
       id={formDescriptionId}
       className={cn("text-sm text-muted-foreground", className)}
@@ -161,6 +169,7 @@ function FormMessage({
 
   return (
     <p
+      data-slot="form-message"
       ref={ref}
       id={formMessageId}
       className={cn("text-sm font-medium text-destructive", className)}
