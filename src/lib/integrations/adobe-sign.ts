@@ -179,4 +179,4 @@ export function verifyWebhookClientId(headerValue: string | null): boolean {
   const expected = process.env.ADOBE_SIGN_WEBHOOK_CLIENT_ID;
   if (!expected) return false;
   return !!headerValue && headerValue === expected;
-}
+} @copilot review provide solve
