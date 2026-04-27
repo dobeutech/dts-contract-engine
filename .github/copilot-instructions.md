@@ -84,7 +84,8 @@ CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, then `pnpm tes
 
 ### Database contract
 
-- The database shape lives in `supabase/migrations/0001_init.sql`.
+- The database contract is defined across `supabase/migrations/*.sql`.
+- Start with `0001_init.sql`, then review later migrations for the current shape, especially `0002_publish_pricing_config_rpc.sql`, `0003_adobe_sign.sql`, and `0004_portal_security_and_webhook_idempotency.sql`.
 - All project tables live in the **`dts` Postgres schema**, not `public`.
 - Core tables are `agency_settings`, `pricing_config`, `clients`, `quotes`, `contracts`, `consulting_log`, `invoices`, and `audit_log`.
 - RLS is enabled on every table.
@@ -135,14 +136,14 @@ If you change pricing math, update `engine.test.ts` in the same change.
 1. Deployment targets **Vercel**, and the repo is already linked through `.vercel/project.json`.
 2. The real deployment runbook is `docs/SETUP.md`, not the default `README.md`.
 3. After changing server-side environment variables, redeploy; Vercel env changes do not affect existing deployments until the next build.
-4. Expected environment variables come from `.env.example` and already anticipate Supabase, DocuSeal, Stripe, Resend, Customer.io, and client-portal token signing.
+4. Expected environment variables come from `.env.example` and already anticipate Supabase, Adobe Sign, Stripe, Resend, Intercom, Sentry, and client-portal settings.
 5. Vercel SSO / Deployment Protection can block previews and the default production URL. If a deploy works but the site is gated, check the SSO settings before debugging the app itself.
 6. The supported Node range is `>=20 <24`; `docs/SETUP.md` calls out a Node 24 build issue.
 
 ### Webhook and integration boundaries
 
 1. Middleware intentionally leaves `/api/webhooks/*` public; use that namespace for external providers only.
-2. Keep inbound third-party handlers narrow and provider-specific, e.g. DocuSeal signature events, Stripe billing events, calendar/logging events.
+2. Keep inbound third-party handlers narrow and provider-specific, e.g. Adobe Sign signature events and Stripe billing events.
 3. Validate webhook payloads and signature secrets before any side effects.
 4. Treat webhook routes as ingestion adapters only: parse -> verify -> hand off to server-side business logic.
 5. External-service clients live in focused modules under `src/lib/integrations/*` rather than being embedded directly in route handlers or UI code.
