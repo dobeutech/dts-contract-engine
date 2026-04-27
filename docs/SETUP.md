@@ -5,7 +5,7 @@ Assumes a fresh clone with no local state.
 
 ## Prerequisites
 
-- Node 22+ (24.x is what was tested) — the repo uses Corepack-managed pnpm
+- Node 20–23 (Node 24 has a webpack `WasmHash` cache bug that crashes `next build`; clear `.next/` if you hit it). `engines` in `package.json` enforces this.
 - A Vercel account with access to the **dobeutech-7910s-projects** team
 - A Supabase account with access to the **unified-ai** project (`qdwvcrmdqweojverdmmz`)
 - The GitHub CLI (`gh`) authenticated against `dobeutech`
@@ -64,6 +64,22 @@ entries from other apps. Two paths:
 1. Open `https://supabase.com/dashboard/project/qdwvcrmdqweojverdmmz/sql/new`
 2. Paste the migration file contents
 3. Run
+
+### Required for production launch — apply migration `0004`
+
+`supabase/migrations/0004_portal_security_and_webhook_idempotency.sql` must be
+applied before the production webhooks are turned on. It:
+
+- adds `portal_token_expires_at`, `portal_token_revoked_at`, `portal_token_last_used_at` to `dts.clients` (90-day backfill on existing rows);
+- creates `dts.adobe_sign_events` and `dts.stripe_events` for webhook dedup;
+- creates the **private** `contracts` storage bucket and locks `storage.objects` to service-role-only reads/writes for that bucket.
+
+The application code already expects this schema — running the webhooks
+without it will return `ledger_unavailable` 500s on the first event.
+
+`supabase/migrations/v5_event_ledger_and_retry_queue.sql` is also in the repo for
+source-of-truth completeness, but it belongs to a different app on the shared
+project. **Do not re-apply it from here.**
 
 ### Path B — CLI (only if you accept the migration-history caveat)
 

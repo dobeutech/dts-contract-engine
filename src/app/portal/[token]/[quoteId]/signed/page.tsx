@@ -14,6 +14,9 @@ export default async function SignedPage({ params }: Props) {
   if (!client) notFound();
   const quote = await getPortalQuote(client.id, quoteId);
   if (!quote) notFound();
+  // Only show "Pay deposit" once the contract has actually been signed and
+  // before the deposit has cleared.
+  if (quote.status !== "signed") notFound();
 
   return (
     <div className="space-y-6">

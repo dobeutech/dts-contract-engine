@@ -1,4 +1,5 @@
 import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 // Minimal Adobe Acrobat Sign REST API v6 client.
 // Auth model: integration key (long-lived) passed as `Bearer` to api.<region>.adobesign.com.
@@ -171,12 +172,55 @@ export async function downloadSignedPdf(agreementId: string): Promise<Buffer> {
   return Buffer.from(ab);
 }
 
-// Verify Adobe Sign webhook by checking the X-AdobeSign-ClientId header.
-// Adobe Sign uses a static client id (from your integration registration) as
-// the webhook authenticity check, plus an HMAC for advanced setups. We support
-// the simple client-id check by default and fall back to compare-and-store.
+// Constant-time string equality. Returns false on length mismatch or empty
+// inputs without ever short-circuiting on prefix.
+function constantTimeEquals(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const A = Buffer.from(a, "utf8");
+  const B = Buffer.from(b, "utf8");
+  if (A.length !== B.length) return false;
+  return timingSafeEqual(A, B);
+}
+
+// Verify Adobe Sign webhook authenticity. Adobe Sign sends three signatures:
+//
+//   X-AdobeSign-ClientId             — static client id (registration handshake)
+//   X-AdobeSign-ClientSecret-Sha256  — HMAC-SHA256(rawBody, clientSecret)
+//   X-AdobeSign-AccountSecret-Sha256 — HMAC-SHA256(rawBody, accountSecret)
+//
+// We require client-id match AND, when ADOBE_SIGN_WEBHOOK_CLIENT_SECRET is
+// set, a valid HMAC against the raw body. The HMAC is what binds the request
+// payload to the secret — without it, an attacker who learns the (static)
+// client id can replay or forge events.
+export function verifyAdobeSignWebhook(args: {
+  clientIdHeader: string | null;
+  hmacHeader: string | null;
+  rawBody: string;
+}): { ok: boolean; reason?: string } {
+  const expectedClientId = process.env.ADOBE_SIGN_WEBHOOK_CLIENT_ID;
+  if (!expectedClientId)
+    return { ok: false, reason: "no_client_id_configured" };
+  if (!constantTimeEquals(args.clientIdHeader, expectedClientId)) {
+    return { ok: false, reason: "client_id_mismatch" };
+  }
+  const expectedSecret = process.env.ADOBE_SIGN_WEBHOOK_CLIENT_SECRET;
+  if (expectedSecret) {
+    if (!args.hmacHeader) return { ok: false, reason: "missing_hmac" };
+    const computed = createHmac("sha256", expectedSecret)
+      .update(args.rawBody, "utf8")
+      .digest("base64");
+    if (!constantTimeEquals(args.hmacHeader, computed)) {
+      return { ok: false, reason: "hmac_mismatch" };
+    }
+  }
+  return { ok: true };
+}
+
+// Backwards-compatible thin wrapper. Prefer verifyAdobeSignWebhook above.
 export function verifyWebhookClientId(headerValue: string | null): boolean {
-  const expected = process.env.ADOBE_SIGN_WEBHOOK_CLIENT_ID;
-  if (!expected) return false;
-  return !!headerValue && headerValue === expected;
+  return verifyAdobeSignWebhook({
+    clientIdHeader: headerValue,
+    hmacHeader: null,
+    rawBody: "",
+  }).ok;
 }

@@ -93,14 +93,40 @@ export async function softDeleteClient(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Capability-URL token. 90-day expiry by default — long enough for normal
+// quote review cycles, short enough that long-tail leaks (browser history,
+// screenshare recordings, mail-server logs) age out without intervention.
+const PORTAL_TOKEN_TTL_DAYS = 90;
+
 export async function rotatePortalToken(id: string): Promise<string> {
-  const token = crypto.randomUUID().replace(/-/g, "");
+  // 256 bits of entropy. Two `crypto.randomUUID()` outputs concatenated, with
+  // dashes stripped — 64 hex chars, ~256 bits. Bigger than UUID v4's 122 bits
+  // and resistant to enumeration even at gigascale.
+  const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "");
+  const expiresAt = new Date(
+    Date.now() + PORTAL_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const supabase = await createServerSupabase();
   const { error } = await supabase
     .schema("dts")
     .from(TABLE)
-    .update({ portal_token: token })
+    .update({
+      portal_token: token,
+      portal_token_expires_at: expiresAt,
+      portal_token_revoked_at: null,
+      portal_token_last_used_at: null,
+    })
     .eq("id", id);
   if (error) throw new Error(error.message);
   return token;
+}
+
+export async function revokePortalToken(id: string): Promise<void> {
+  const supabase = await createServerSupabase();
+  const { error } = await supabase
+    .schema("dts")
+    .from(TABLE)
+    .update({ portal_token_revoked_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
