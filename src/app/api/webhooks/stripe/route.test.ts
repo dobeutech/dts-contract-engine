@@ -77,9 +77,11 @@ describe("stripe webhook route", () => {
           id: "cs_1",
           amount_total: 4200,
           payment_intent: "pi_1",
+          payment_status: "paid",
           metadata: {
             quote_id: "quote_1",
             client_id: "client_1",
+            kind: "dts.deposit",
           },
         },
       },
