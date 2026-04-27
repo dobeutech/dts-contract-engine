@@ -46,7 +46,7 @@ Before removing the Vercel SSO protection and allowing real clients to access th
 
 - [ ] All credentials rotated (Vercel PAT, Supabase PAT, Supabase service-role key).
 - [ ] Vercel environment variables populated for production:
-  - `ADOBE_SIGN_BASE_URI`, `ADOBE_SIGN_INTEGRATION_KEY`, `ADOBE_SIGN_WEBHOOK_CLIENT_ID`
+  - `ADOBE_SIGN_BASE_URI`, `ADOBE_SIGN_INTEGRATION_KEY`, `ADOBE_SIGN_WEBHOOK_CLIENT_ID`, `ADOBE_SIGN_WEBHOOK_CLIENT_SECRET`
   - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
   - `RESEND_API_KEY`, `NOTIFICATIONS_FROM_EMAIL`, `NOTIFICATIONS_TEAM_EMAIL`
   - `NEXT_PUBLIC_INTERCOM_APP_ID`, `INTERCOM_ACCESS_TOKEN`

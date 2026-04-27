@@ -109,6 +109,7 @@ Project is `dts-contract-engine` under the **dobeutech-7910s-projects** team.
   - `ADOBE_SIGN_BASE_URI` — Adobe Sign account base URI (for example `https://api.na1.adobesign.com`)
   - `ADOBE_SIGN_INTEGRATION_KEY` — Adobe Sign integration key
   - `ADOBE_SIGN_WEBHOOK_CLIENT_ID` — expected `X-AdobeSign-ClientId` header value
+  - `ADOBE_SIGN_WEBHOOK_CLIENT_SECRET` — expected HMAC secret for `X-AdobeSign-ClientSecret-Sha256`
 
 The repo is linked via `.vercel/project.json` (committed since it has no
 secrets — only project + team IDs). `vercel` CLI auto-detects the link
@@ -139,6 +140,20 @@ pnpm exec vercel deploy --prod --yes
 `--yes` accepts existing project link without prompting. Without
 `--prod`, you get a preview deploy (gated by SSO unless disabled — see
 below).
+
+### Adobe Sign webhook HMAC setup (production)
+
+For production, configure the webhook secret in both systems with the exact same value:
+
+1. In Vercel production env, set `ADOBE_SIGN_WEBHOOK_CLIENT_SECRET`.
+2. In Adobe Sign, open the webhook configuration used by this app and set the matching HMAC client secret:
+   - Adobe Sign web app: **Account** -> **Webhooks** -> select the webhook for `.../api/webhooks/adobe-sign` -> **Edit**.
+   - If you manage webhooks by API, update via `PUT /webhooks/{webhookId}` with the same client/application context.
+3. Confirm the webhook still validates the endpoint intent (`X-AdobeSign-ClientId` echo on GET).
+4. Redeploy production (`pnpm exec vercel deploy --prod --yes`).
+
+The webhook route validates `X-AdobeSign-ClientId` and `X-AdobeSign-ClientSecret-Sha256`.
+If the secret is missing or mismatched, webhook requests are rejected with `401`.
 
 ### Setting or rotating env vars
 

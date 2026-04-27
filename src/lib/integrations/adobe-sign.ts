@@ -188,10 +188,9 @@ function constantTimeEquals(a: string | null, b: string | null): boolean {
 //   X-AdobeSign-ClientSecret-Sha256  — HMAC-SHA256(rawBody, clientSecret)
 //   X-AdobeSign-AccountSecret-Sha256 — HMAC-SHA256(rawBody, accountSecret)
 //
-// We require client-id match AND, when ADOBE_SIGN_WEBHOOK_CLIENT_SECRET is
-// set, a valid HMAC against the raw body. The HMAC is what binds the request
-// payload to the secret — without it, an attacker who learns the (static)
-// client id can replay or forge events.
+// We require client-id match and a valid HMAC against the raw body.
+// ADOBE_SIGN_WEBHOOK_CLIENT_SECRET is enforced in production startup validation.
+// The HMAC binds payload integrity/authenticity to the shared secret.
 export function verifyAdobeSignWebhook(args: {
   clientIdHeader: string | null;
   hmacHeader: string | null;
