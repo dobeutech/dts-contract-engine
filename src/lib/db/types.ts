@@ -28,6 +28,9 @@ export interface ClientRow {
   relationship_tag: RelationshipTag;
   apollo_data: Record<string, unknown> | null;
   portal_token: string | null;
+  portal_token_expires_at: string | null;
+  portal_token_revoked_at: string | null;
+  portal_token_last_used_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;

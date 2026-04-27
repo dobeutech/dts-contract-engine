@@ -46,6 +46,61 @@ function requestWithBody(body: string, signature = "sig"): Request {
   });
 }
 
+// Builds a chainable supabase service-client mock with stripe_events dedup
+// and the quotes/clients tables wired up.
+function makeSupabase(opts: {
+  stripeEventsInsertResult?: { error: { code?: string } | null };
+  quoteRow?: { project_name?: string; project_type?: string } | null;
+  clientRow?: {
+    company?: string;
+    email?: string | null;
+    contact_name?: string | null;
+  } | null;
+}) {
+  const insertResult = opts.stripeEventsInsertResult ?? { error: null };
+
+  const stripeEventsInsert = vi.fn().mockResolvedValue(insertResult);
+  const stripeEventsUpdate = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  });
+  const stripeEventsDelete = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  });
+
+  const quoteUpdateEqEq = vi.fn().mockResolvedValue({ error: null });
+  const quoteUpdateEq = vi.fn().mockReturnValue({ eq: quoteUpdateEqEq });
+  const quoteUpdate = vi.fn().mockReturnValue({ eq: quoteUpdateEq });
+
+  const quoteSelectEq = vi.fn().mockReturnValue({
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: opts.quoteRow ?? null,
+    }),
+  });
+  const quoteSelect = vi.fn().mockReturnValue({ eq: quoteSelectEq });
+
+  const clientSelectEq = vi.fn().mockReturnValue({
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: opts.clientRow ?? null,
+    }),
+  });
+  const clientSelect = vi.fn().mockReturnValue({ eq: clientSelectEq });
+
+  const from = vi.fn((table: string) => {
+    if (table === "stripe_events") {
+      return {
+        insert: stripeEventsInsert,
+        update: stripeEventsUpdate,
+        delete: stripeEventsDelete,
+      };
+    }
+    if (table === "quotes") return { update: quoteUpdate, select: quoteSelect };
+    if (table === "clients") return { select: clientSelect };
+    return {};
+  });
+
+  return { schema: vi.fn().mockReturnValue({ from }) };
+}
+
 describe("stripe webhook route", () => {
   const previousSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -60,12 +115,34 @@ describe("stripe webhook route", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when signature verification fails", async () => {
+  it("returns 400 when signature verification fails (no error leak)", async () => {
     constructEvent.mockImplementation(() => {
-      throw new Error("invalid signature");
+      throw new Error("invalid signature: secret mismatch on payload");
     });
     const res = await POST(requestWithBody("{}"));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    // The library's error message should not be reflected back.
+    expect(body.error).toBe("verification_failed");
+    expect(JSON.stringify(body)).not.toContain("secret mismatch");
+  });
+
+  it("dedupes replayed events via dts.stripe_events unique violation", async () => {
+    constructEvent.mockReturnValue({
+      id: "evt_1",
+      type: "checkout.session.completed",
+      data: { object: {} },
+    });
+    createServiceClient.mockReturnValue(
+      makeSupabase({ stripeEventsInsertResult: { error: { code: "23505" } } }),
+    );
+
+    const res = await POST(requestWithBody('{"id":"evt"}'));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ ok: true, deduped: true });
+    expect(recordAudit).not.toHaveBeenCalled();
+    expect(sendKickoffNotification).not.toHaveBeenCalled();
   });
 
   it("handles checkout.session.completed and notifies team", async () => {
@@ -77,41 +154,26 @@ describe("stripe webhook route", () => {
           id: "cs_1",
           amount_total: 4200,
           payment_intent: "pi_1",
+          payment_status: "paid",
           metadata: {
             quote_id: "quote_1",
             client_id: "client_1",
+            kind: "dts.deposit",
           },
         },
       },
     });
 
-    const quoteUpdateEq = vi.fn().mockResolvedValue({ error: null });
-    const quoteUpdate = vi.fn().mockReturnValue({ eq: quoteUpdateEq });
-    const quoteSelectEq = vi.fn().mockReturnValue({
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: { project_name: "Portal Build", project_type: "web" },
-      }),
-    });
-    const quoteSelect = vi.fn().mockReturnValue({ eq: quoteSelectEq });
-
-    const clientSelectEq = vi.fn().mockReturnValue({
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: {
+    createServiceClient.mockReturnValue(
+      makeSupabase({
+        quoteRow: { project_name: "Portal Build", project_type: "web" },
+        clientRow: {
           company: "Dobeu",
           email: "ops@example.com",
           contact_name: "Jeremy",
         },
       }),
-    });
-    const clientSelect = vi.fn().mockReturnValue({ eq: clientSelectEq });
-
-    const from = vi.fn((table: string) => {
-      if (table === "quotes")
-        return { update: quoteUpdate, select: quoteSelect };
-      return { select: clientSelect };
-    });
-    const schema = vi.fn().mockReturnValue({ from });
-    createServiceClient.mockReturnValue({ schema });
+    );
 
     const res = await POST(requestWithBody('{"id":"evt"}'));
     expect(res.status).toBe(200);
@@ -129,6 +191,7 @@ describe("stripe webhook route", () => {
       type: "invoice.payment_succeeded",
       data: { object: {} },
     });
+    createServiceClient.mockReturnValue(makeSupabase({}));
     const res = await POST(requestWithBody('{"id":"evt"}'));
     expect(res.status).toBe(200);
     expect(recordAudit).toHaveBeenCalledWith(

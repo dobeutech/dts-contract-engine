@@ -5,7 +5,7 @@ Assumes a fresh clone with no local state.
 
 ## Prerequisites
 
-- Node 22+ (24.x is what was tested) — the repo uses Corepack-managed pnpm
+- Node 20–23 (Node 24 has a webpack `WasmHash` cache bug that crashes `next build`; clear `.next/` if you hit it). `engines` in `package.json` enforces this.
 - A Vercel account with access to the **dobeutech-7910s-projects** team
 - A Supabase account with access to the **unified-ai** project (`qdwvcrmdqweojverdmmz`)
 - The GitHub CLI (`gh`) authenticated against `dobeutech`
@@ -65,6 +65,22 @@ entries from other apps. Two paths:
 2. Paste the migration file contents
 3. Run
 
+### Required for production launch — apply migration `0004`
+
+`supabase/migrations/0004_portal_security_and_webhook_idempotency.sql` must be
+applied before the production webhooks are turned on. It:
+
+- adds `portal_token_expires_at`, `portal_token_revoked_at`, `portal_token_last_used_at` to `dts.clients` (90-day backfill on existing rows);
+- creates `dts.adobe_sign_events` and `dts.stripe_events` for webhook dedup;
+- creates the **private** `contracts` storage bucket and locks `storage.objects` to service-role-only reads/writes for that bucket.
+
+The application code already expects this schema — running the webhooks
+without it will return `ledger_unavailable` 500s on the first event.
+
+`supabase/migrations/v5_event_ledger_and_retry_queue.sql` is also in the repo for
+source-of-truth completeness, but it belongs to a different app on the shared
+project. **Do not re-apply it from here.**
+
 ### Path B — CLI (only if you accept the migration-history caveat)
 
 ```bash
@@ -93,6 +109,7 @@ Project is `dts-contract-engine` under the **dobeutech-7910s-projects** team.
   - `ADOBE_SIGN_BASE_URI` — Adobe Sign account base URI (for example `https://api.na1.adobesign.com`)
   - `ADOBE_SIGN_INTEGRATION_KEY` — Adobe Sign integration key
   - `ADOBE_SIGN_WEBHOOK_CLIENT_ID` — expected `X-AdobeSign-ClientId` header value
+  - `ADOBE_SIGN_WEBHOOK_CLIENT_SECRET` — expected HMAC secret for `X-AdobeSign-ClientSecret-Sha256`
 
 The repo is linked via `.vercel/project.json` (committed since it has no
 secrets — only project + team IDs). `vercel` CLI auto-detects the link
@@ -123,6 +140,20 @@ pnpm exec vercel deploy --prod --yes
 `--yes` accepts existing project link without prompting. Without
 `--prod`, you get a preview deploy (gated by SSO unless disabled — see
 below).
+
+### Adobe Sign webhook HMAC setup (production)
+
+For production, configure the webhook secret in both systems with the exact same value:
+
+1. In Vercel production env, set `ADOBE_SIGN_WEBHOOK_CLIENT_SECRET`.
+2. In Adobe Sign, open the webhook configuration used by this app and set the matching HMAC client secret:
+   - Adobe Sign web app: **Account** -> **Webhooks** -> select the webhook for `.../api/webhooks/adobe-sign` -> **Edit**.
+   - If you manage webhooks by API, update via `PUT /webhooks/{webhookId}` with the same client/application context.
+3. Confirm the webhook still validates the endpoint intent (`X-AdobeSign-ClientId` echo on GET).
+4. Redeploy production (`pnpm exec vercel deploy --prod --yes`).
+
+The webhook route validates `X-AdobeSign-ClientId` and `X-AdobeSign-ClientSecret-Sha256`.
+If the secret is missing or mismatched, webhook requests are rejected with `401`.
 
 ### Setting or rotating env vars
 
@@ -201,6 +232,31 @@ In the Supabase dashboard for the `unified-ai` project: **Authentication
   entries for previews.
 
 `NEXT_PUBLIC_APP_URL` in Vercel env should match: `https://contracts.dobeu.tech`.
+
+### Google OAuth (the "Continue with Google" button)
+
+The login page exposes a Google SSO button alongside the email/password
+form. Until the provider is enabled in Supabase, clicking it surfaces a
+"Google sign-in is not yet enabled" error — the email path keeps working.
+
+Enable in three steps:
+
+1. **Google Cloud OAuth client.** In the Google Cloud Console for the
+   project that hosts the OAuth consent screen, create a Web Application
+   OAuth 2.0 Client ID. Authorized JavaScript origins: `https://contracts.dobeu.tech`.
+   Authorized redirect URI: `https://qdwvcrmdqweojverdmmz.supabase.co/auth/v1/callback`
+   (Supabase's hosted callback — **not** the app's `/auth/callback`).
+2. **Supabase provider.** Dashboard → Authentication → Providers → Google.
+   Toggle on, paste the Client ID + Client Secret from step 1. Save.
+3. **App callback.** No code change needed; `src/app/auth/callback/route.ts`
+   already exchanges the code Supabase forwards back. Confirm
+   `https://contracts.dobeu.tech/auth/callback` is on the redirect-URL
+   allowlist (it should be, since `https://contracts.dobeu.tech/**` covers it).
+
+After enabling, sign-in flow is: button → Google consent screen →
+Supabase code exchange → `/auth/callback` → `/`. Restrict who can sign in
+by limiting the Google Workspace domain in the OAuth consent screen, or
+by adding an `auth.users` allowlist trigger on Supabase.
 
 ## Sentry
 

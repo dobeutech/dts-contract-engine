@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { IntercomMessenger } from "@/components/intercom-messenger";
+
+// NOTE: Intercom is intentionally NOT mounted in the portal layout. The portal
+// URL embeds a long-lived bearer token in its path; any third-party script
+// that captures `window.location` (Intercom, analytics, etc.) ships that
+// token to a third party and into conversation history.
+//
+// To re-enable: move the token out of the URL into an HTTP-only cookie set
+// by a one-shot landing route, then redirect to a tokenless path. Until that
+// refactor lands, support is via the email link in the footer.
 
 export default function PortalLayout({
   children,
@@ -24,10 +32,9 @@ export default function PortalLayout({
         </div>
       </header>
       <main className="mx-auto max-w-4xl px-6 py-10">{children}</main>
-      <IntercomMessenger appId={process.env.NEXT_PUBLIC_INTERCOM_APP_ID} />
       <footer className="mx-auto max-w-4xl px-6 py-10 text-xs text-muted-foreground">
         <p>
-          Need help? Use the chat in the bottom right or email{" "}
+          Need help? Email{" "}
           <a
             href="mailto:hello@dobeu.dev"
             className="text-[var(--brand-amber-warm)]"

@@ -19,14 +19,14 @@ pnpm test:e2e     # playwright (uses BASE_URL or local dev)
 pnpm format       # prettier --write .
 ```
 
-Run a single Vitest file or named case:
+Run a single Vitest file or named case (forward slashes also work cross-platform):
 
 ```bash
-pnpm test -- src\lib\pricing\engine.test.ts
-pnpm test -- -t "Growth tier baseline = $3,500/mo" src\lib\pricing\engine.test.ts
+pnpm test -- src/lib/pricing/engine.test.ts
+pnpm test -- -t "Growth tier baseline = $3,500/mo" src/lib/pricing/engine.test.ts
 ```
 
-Pre-commit runs `lint-staged` (Prettier + ESLint --fix on staged files). Husky is installed via `pnpm prepare`.
+Pre-commit runs `lint-staged` (Prettier + ESLint --fix on staged files). Husky is installed via `pnpm prepare`. Commit messages are linted by `@commitlint/config-conventional` — use Conventional Commits (`feat:`, `fix:`, `refactor:`, etc.) or the commit will be rejected.
 
 ## Architecture
 
@@ -71,6 +71,8 @@ Schema lives in `supabase/migrations/0001_init.sql`. Core tables: `agency_settin
 - Use Zod for form input and webhook payload validation.
 - Tests are colocated with the code they cover.
 - Webhook routes are ingestion adapters: parse → verify signature → hand off to server-side logic. External-service clients belong under a future `src/lib/integrations/*`, not embedded in route handlers or UI.
+- **Client portal access is token-scoped per client**, not Supabase auth for end clients. The `clients` table reserves portal token fields — use those, do not invent a parallel auth path for `/portal` routes.
+- **Integration touchpoints already exist in the schema** — when wiring DocuSeal, Stripe, or Customer.io, populate the existing columns (`contracts.signature_provider*`, `invoices.stripe_invoice_id`, `consulting_log.source` / `source_ref`) rather than adding parallel ones.
 
 ### Styling
 

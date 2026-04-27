@@ -22,10 +22,33 @@ export async function POST(req: Request) {
   let event: Stripe.Event;
   try {
     event = getStripe().webhooks.constructEvent(raw, sig, secret);
-  } catch (e) {
+  } catch {
+    // Don't echo the verification library's message back — it can include
+    // implementation detail useful to attackers probing the secret.
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "verify failed" },
+      { ok: false, error: "verification_failed" },
       { status: 400 },
+    );
+  }
+
+  const supabase = createServiceClient();
+
+  // Idempotency: each event.id is processed at most once. Stripe retries
+  // failed deliveries with the same event.id; replays from a leaked endpoint
+  // hit the same path.
+  const { error: dedupErr } = await supabase
+    .schema("dts")
+    .from("stripe_events")
+    .insert({ event_id: event.id, event_type: event.type });
+
+  if (dedupErr) {
+    const code = (dedupErr as { code?: string }).code;
+    if (code === "23505") {
+      return NextResponse.json({ ok: true, deduped: true });
+    }
+    return NextResponse.json(
+      { ok: false, error: "ledger_unavailable" },
+      { status: 500 },
     );
   }
 
@@ -37,14 +60,15 @@ export async function POST(req: Request) {
       // Only process deposit payments from this app; ignore unrelated sessions.
       const isDeposit = session.metadata?.kind === "dts.deposit";
       const isPaid = session.payment_status === "paid";
-      if (quoteId && clientId && isDeposit && isPaid) {
-        const supabase = createServiceClient();
 
-        await supabase
+      if (quoteId && clientId && isDeposit && isPaid) {
+        const { error: quoteErr } = await supabase
           .schema("dts")
           .from("quotes")
           .update({ status: "active" })
-          .eq("id", quoteId);
+          .eq("id", quoteId)
+          .eq("status", "signed"); // only flip from signed → active
+        if (quoteErr) throw quoteErr;
 
         await recordAudit({
           actorId: null,
@@ -68,7 +92,7 @@ export async function POST(req: Request) {
         const { data: quote } = await supabase
           .schema("dts")
           .from("quotes")
-          .select("project_name,project_type,calc,contract_pdf_url")
+          .select("project_name,project_type,calc")
           .eq("id", quoteId)
           .maybeSingle();
 
@@ -85,17 +109,27 @@ export async function POST(req: Request) {
         diff: { id: event.id },
       });
     }
+
+    await supabase
+      .schema("dts")
+      .from("stripe_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("event_id", event.id);
   } catch (e) {
     await recordAudit({
       actorId: null,
       action: "stripe.webhook.error",
       diff: {
         type: event.type,
-        message: e instanceof Error ? e.message : String(e),
+        message: e instanceof Error ? e.message : "unknown",
       },
     });
-    // Return 5xx so Stripe retries transient failures (DB down, etc.).
-    // The handler is idempotent: duplicate events are safe to process.
+    // Roll back the dedup row so Stripe's retry actually re-runs us.
+    await supabase
+      .schema("dts")
+      .from("stripe_events")
+      .delete()
+      .eq("event_id", event.id);
     return NextResponse.json(
       { ok: false, error: "processing_error" },
       { status: 500 },

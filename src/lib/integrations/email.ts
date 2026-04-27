@@ -48,12 +48,9 @@ export async function sendKickoffNotification(
     "",
     `Project: ${args.quote.project_name ?? args.quote.project_type ?? "n/a"}`,
     `Quote ID: ${args.quote.id}`,
-    args.quote.contract_pdf_url
-      ? `Contract: ${args.quote.contract_pdf_url}`
-      : "",
     "",
-    "Reach out within one business day to schedule kickoff.",
-  ].filter(Boolean);
+    "The signed contract is in the admin app under Quotes. Reach out within one business day to schedule kickoff.",
+  ];
 
   try {
     await r.emails.send({
@@ -79,14 +76,11 @@ export async function sendKickoffNotification(
           `Hi ${args.client.contact_name ?? args.client.company ?? "there"},`,
           "",
           "Thanks for signing and paying the deposit. Jeremy will reach out within one business day to schedule kickoff.",
-          args.quote.contract_pdf_url
-            ? `Your signed agreement: ${args.quote.contract_pdf_url}`
-            : "",
+          "",
+          "Your signed agreement is available from the portal link we sent earlier.",
           "",
           "— dobeu",
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        ].join("\n"),
       });
     } catch (e) {
       console.error(
