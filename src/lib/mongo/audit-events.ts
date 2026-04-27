@@ -1,8 +1,12 @@
 import "server-only";
-import { getMongoDb } from "./client";
+import { getMongoDb, withTimeout } from "./client";
 import type { AuditEventDoc } from "./types";
 
 const COLLECTION = "audit_events";
+
+// Bounds blocking on the webhook hot path when Mongo is slow/unreachable.
+// Pairs with the 2s serverSelectionTimeoutMS in the client.
+const FIRE_AND_FORGET_TIMEOUT_MS = 1_500;
 
 export interface AppendAuditEventInput {
   actorId: string | null;
@@ -20,6 +24,10 @@ export interface AppendAuditEventInput {
 export async function appendAuditEvent(
   input: AppendAuditEventInput,
 ): Promise<void> {
+  await withTimeout(_append(input), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
+}
+
+async function _append(input: AppendAuditEventInput): Promise<void> {
   try {
     const db = await getMongoDb();
     const now = new Date();

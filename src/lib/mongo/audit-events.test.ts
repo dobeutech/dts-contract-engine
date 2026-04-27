@@ -5,7 +5,10 @@ const { getMongoDb, insertOne } = vi.hoisted(() => ({
   insertOne: vi.fn(),
 }));
 
-vi.mock("./client", () => ({ getMongoDb }));
+vi.mock("./client", () => ({
+  getMongoDb,
+  withTimeout: <T>(p: Promise<T>) => p,
+}));
 
 import { appendAuditEvent } from "./audit-events";
 

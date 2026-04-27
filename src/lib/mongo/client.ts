@@ -38,9 +38,33 @@ function connect(): Promise<MongoClient> {
     // Keep the pool small; webhooks and audit writes are bursty but low qps.
     maxPoolSize: 10,
     minPoolSize: 0,
-    serverSelectionTimeoutMS: 5_000,
+    // 2s is short enough that an unreachable cluster does not blow the
+    // webhook budget (Stripe/Adobe Sign retry on slow responses), and
+    // long enough that a healthy Atlas always beats it. Per-call
+    // timeouts on the fire-and-forget paths cap blocking even further.
+    serverSelectionTimeoutMS: 2_000,
   });
   return client.connect();
+}
+
+// Race a promise against a fallback returned after `ms`. Used by
+// fire-and-forget writers so the webhook hot path never blocks longer
+// than the timeout, even when Mongo is fully unreachable. The
+// underlying promise continues running in the background.
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function getMongoClient(): Promise<MongoClient> {

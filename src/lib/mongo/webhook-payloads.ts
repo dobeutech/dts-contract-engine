@@ -1,11 +1,15 @@
 import "server-only";
 import { ObjectId, type Filter } from "mongodb";
-import { getMongoDb } from "./client";
+import { getMongoDb, withTimeout } from "./client";
 import type {
   WebhookPayloadDoc,
   WebhookProcessingStatus,
   WebhookProvider,
 } from "./types";
+
+// Cap on how long a fire-and-forget write may block the webhook hot
+// path. Pairs with the 2s serverSelectionTimeoutMS in the client.
+const FIRE_AND_FORGET_TIMEOUT_MS = 1_500;
 
 // Headers we never persist — credentials or signatures whose value once
 // verified is dead weight at best, attacker bait at worst.
@@ -60,6 +64,10 @@ export interface ArchiveInput {
 export async function archiveWebhookPayload(
   input: ArchiveInput,
 ): Promise<ObjectId | null> {
+  return withTimeout(_archive(input), FIRE_AND_FORGET_TIMEOUT_MS, null);
+}
+
+async function _archive(input: ArchiveInput): Promise<ObjectId | null> {
   try {
     const db = await getMongoDb();
     const now = new Date();
@@ -100,6 +108,17 @@ export async function updateWebhookPayloadStatus(
   patch: UpdateStatusInput,
 ): Promise<void> {
   if (!id) return;
+  await withTimeout(
+    _updateStatus(id, patch),
+    FIRE_AND_FORGET_TIMEOUT_MS,
+    undefined,
+  );
+}
+
+async function _updateStatus(
+  id: ObjectId,
+  patch: UpdateStatusInput,
+): Promise<void> {
   try {
     const db = await getMongoDb();
     const update: Record<string, unknown> = { updated_at: new Date() };
@@ -139,7 +158,14 @@ export async function findWebhookPayloads(
   if (args.provider) filter.provider = args.provider;
   if (args.eventId) filter.event_id = args.eventId;
   if (args.since) filter.received_at = { $gte: args.since };
-  const limit = Math.min(Math.max(args.limit ?? 25, 1), 200);
+  // Defense-in-depth: if a non-finite value (e.g., NaN from parseInt)
+  // sneaks past the route's validation, fall back to the default
+  // rather than passing NaN to the driver.
+  const requestedLimit =
+    typeof args.limit === "number" && Number.isFinite(args.limit)
+      ? args.limit
+      : 25;
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
   const docs = await db
     .collection<WebhookPayloadDoc>(COLLECTION)
     .find(filter)

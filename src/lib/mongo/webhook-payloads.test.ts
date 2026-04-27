@@ -7,7 +7,11 @@ const { getMongoDb, insertOne, updateOne, find } = vi.hoisted(() => ({
   find: vi.fn(),
 }));
 
-vi.mock("./client", () => ({ getMongoDb }));
+// withTimeout is passed-through in tests so mocked promises run synchronously.
+vi.mock("./client", () => ({
+  getMongoDb,
+  withTimeout: <T>(p: Promise<T>) => p,
+}));
 
 import { ObjectId } from "mongodb";
 import {
