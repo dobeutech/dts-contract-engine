@@ -69,7 +69,12 @@ export async function getMongoDb(): Promise<Db> {
 async function ensureIndexes(db: Db): Promise<void> {
   const s = state();
   if (s.indexesEnsured) return;
-  // Mark optimistically; if creation fails we'll retry on next call.
+  // Mark before attempting so a persistent failure (e.g. IndexOptionsConflict
+  // from a TTL spec mismatch on an existing index) does not retry on every
+  // request. Mongo's createIndex is idempotent for matching specs, so the
+  // first successful attempt is the only one that matters; if the attempt
+  // fails, an operator should investigate via the logged error rather than
+  // letting the hot path tight-loop.
   s.indexesEnsured = true;
   try {
     await Promise.all([
@@ -92,9 +97,8 @@ async function ensureIndexes(db: Db): Promise<void> {
         .createIndex({ action: 1, occurred_at: -1 }),
     ]);
   } catch (e) {
-    s.indexesEnsured = false;
     console.error(
-      "[mongo] index ensure failed",
+      "[mongo] index ensure failed (will not retry until process restart)",
       e instanceof Error ? e.message : e,
     );
   }

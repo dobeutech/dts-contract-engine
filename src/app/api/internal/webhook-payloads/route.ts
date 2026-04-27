@@ -45,6 +45,13 @@ export async function GET(req: Request) {
     );
   }
 
+  if (limit !== undefined && Number.isNaN(limit)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid limit" },
+      { status: 400 },
+    );
+  }
+
   const docs = await findWebhookPayloads({ provider, eventId, since, limit });
   return NextResponse.json({
     ok: true,
