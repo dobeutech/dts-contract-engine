@@ -1,0 +1,268 @@
+/* ============================================================
+   Dobeu Tech Solutions — Foundations
+   Colors & Type tokens for all 17 sub-brands.
+   Dark is the default mode (developer-first); [data-mode="light"]
+   or the .light class flips aliases to their light-mode primitives.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+/* ---------- Color primitives (from Figma /Primitives) ---------- */
+:root {
+  /* Indigo / amber brand */
+  --brand-indigo-primary: #6b5ce7;
+  --brand-indigo-deep: #4a3fa8;
+  --brand-amber-warm: #f4a261;
+
+  /* Surfaces */
+  --brand-cream-soft: #fff8f0;
+  --brand-dark-surface: #1a1a2e;
+  --brand-dark-elevated: #242440;
+  --brand-code-bg-light: #f5f5f7;
+  --brand-code-bg-dark: #0d0d1a;
+
+  /* Text */
+  --brand-text-gray: #2d2d3a;
+  --brand-body-text-dark: #e0e0e0;
+
+  /* Tints & borders */
+  --brand-tint-indigo-10: #e8e5fa;
+  --brand-tint-amber-10: #fef0e0;
+  --brand-neutral-gray: #f5f5f7;
+  --brand-border-light: #e0dff5;
+  --brand-border-dark: #2a2a45;
+
+  /* Semantic */
+  --semantic-success: #4caf50;
+  --semantic-warning: #f4a261;
+  --semantic-error: #e07a5f;
+
+  /* Neutrals */
+  --neutral-white: #ffffff;
+  --neutral-black: #000000;
+
+  /* Type primitives */
+  --font-sans:
+    "Nunito", "Quicksand", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semi: 600;
+  --fw-bold: 700;
+  --fw-extra: 800;
+
+  /* Radii (Figma /Radius page) */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  /* Spacing (4pt scale) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Shadows — soft, warm, low-contrast; indigo-tinted on dark */
+  --shadow-xs: 0 1px 2px rgba(26, 26, 46, 0.06);
+  --shadow-sm: 0 2px 6px rgba(26, 26, 46, 0.08);
+  --shadow-md: 0 6px 18px rgba(26, 26, 46, 0.1);
+  --shadow-lg: 0 16px 40px rgba(26, 26, 46, 0.14);
+  --shadow-ring-indigo: 0 0 0 3px rgba(107, 92, 231, 0.22);
+  --shadow-ring-amber: 0 0 0 3px rgba(244, 162, 97, 0.25);
+}
+
+/* ---------- Semantic tokens — DARK (default) ---------- */
+:root,
+:root[data-mode="dark"],
+.dark {
+  --bg-primary: var(--brand-dark-surface);
+  --bg-secondary: var(--brand-dark-elevated);
+  --bg-tertiary: var(--brand-dark-elevated);
+  --bg-code: var(--brand-code-bg-dark);
+  --bg-tint-indigo: var(--brand-border-dark);
+  --bg-tint-amber: var(--brand-dark-elevated);
+
+  --fg-primary: var(--neutral-white);
+  --fg-body: var(--brand-body-text-dark);
+  --fg-heading: var(--brand-indigo-primary);
+  --fg-link: var(--brand-indigo-primary);
+  --fg-muted: #9a9ab0;
+
+  /* In DARK mode, primary CTA flips to amber for contrast */
+  --cta-bg: var(--brand-amber-warm);
+  --cta-fg: var(--brand-text-gray);
+
+  --border-default: var(--brand-border-dark);
+  --border-subtle: rgba(224, 223, 245, 0.08);
+
+  --accent-rating: var(--brand-amber-warm);
+  --status-success: var(--semantic-success);
+  --status-warning: var(--semantic-warning);
+  --status-error: var(--semantic-error);
+}
+
+/* ---------- Semantic tokens — LIGHT ---------- */
+:root[data-mode="light"],
+.light {
+  --bg-primary: var(--neutral-white);
+  --bg-secondary: var(--brand-cream-soft);
+  --bg-tertiary: var(--brand-neutral-gray);
+  --bg-code: var(--brand-code-bg-light);
+  --bg-tint-indigo: var(--brand-tint-indigo-10);
+  --bg-tint-amber: var(--brand-tint-amber-10);
+
+  --fg-primary: var(--brand-text-gray);
+  --fg-body: var(--brand-text-gray);
+  --fg-heading: var(--brand-indigo-deep);
+  --fg-link: var(--brand-indigo-primary);
+  --fg-muted: #888888;
+
+  /* In LIGHT mode, primary CTA is indigo */
+  --cta-bg: var(--brand-indigo-primary);
+  --cta-fg: var(--neutral-white);
+
+  --border-default: var(--brand-border-light);
+  --border-subtle: rgba(45, 45, 58, 0.06);
+
+  --accent-rating: var(--brand-amber-warm);
+  --status-success: var(--semantic-success);
+  --status-warning: var(--semantic-warning);
+  --status-error: var(--semantic-error);
+}
+
+/* ---------- Type scale (Figma /Typography) ---------- */
+:root {
+  --type-display-size: 48px;
+  --type-display-lh: 1.05;
+  --type-display-w: 800;
+  --type-h1-size: 36px;
+  --type-h1-lh: 1.1;
+  --type-h1-w: 800;
+  --type-h2-size: 28px;
+  --type-h2-lh: 1.15;
+  --type-h2-w: 700;
+  --type-h3-size: 22px;
+  --type-h3-lh: 1.2;
+  --type-h3-w: 700;
+  --type-h4-size: 18px;
+  --type-h4-lh: 1.3;
+  --type-h4-w: 700;
+  --type-body-size: 16px;
+  --type-body-lh: 1.55;
+  --type-body-w: 400;
+  --type-small-size: 14px;
+  --type-small-lh: 1.5;
+  --type-small-w: 400;
+  --type-label-size: 12px;
+  --type-label-lh: 1.2;
+  --type-label-w: 700; /* uppercase labels */
+  --type-code-size: 13px;
+  --type-code-lh: 1.55;
+}
+
+/* ---------- Semantic tag defaults ---------- */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-lh);
+  color: var(--fg-body);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+.h1 {
+  font: var(--type-h1-w) var(--type-h1-size)/var(--type-h1-lh) var(--font-sans);
+  color: var(--fg-heading);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+h2,
+.h2 {
+  font: var(--type-h2-w) var(--type-h2-size)/var(--type-h2-lh) var(--font-sans);
+  color: var(--fg-heading);
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+h3,
+.h3 {
+  font: var(--type-h3-w) var(--type-h3-size)/var(--type-h3-lh) var(--font-sans);
+  color: var(--fg-heading);
+  margin: 0;
+}
+h4,
+.h4 {
+  font: var(--type-h4-w) var(--type-h4-size)/var(--type-h4-lh) var(--font-sans);
+  color: var(--fg-heading);
+  margin: 0;
+}
+.display {
+  font: var(--type-display-w) var(--type-display-size)/var(--type-display-lh)
+    var(--font-sans);
+  color: var(--fg-heading);
+  letter-spacing: -0.02em;
+}
+p {
+  margin: 0;
+  color: var(--fg-body);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-lh);
+}
+small,
+.small {
+  font-size: var(--type-small-size);
+  line-height: var(--type-small-lh);
+  color: var(--fg-muted);
+}
+.label {
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-lh);
+  font-weight: var(--type-label-w);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+code,
+.code,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--type-code-size);
+  line-height: var(--type-code-lh);
+}
+code {
+  background: var(--bg-code);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+a {
+  color: var(--fg-link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Sub-brand TLD accent — swap with a single --tld var ---------- */
+/* .dev uses amber; .net uses indigo-primary; .online uses deep; etc. */
+.brand-dev {
+  --tld-accent: var(--brand-amber-warm);
+}
+.brand-net {
+  --tld-accent: var(--brand-indigo-primary);
+}
+.brand-online {
+  --tld-accent: var(--brand-indigo-deep);
+}
+.brand-io {
+  --tld-accent: var(--semantic-success);
+}

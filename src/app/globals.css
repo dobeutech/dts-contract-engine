@@ -1,14 +1,26 @@
+/* ============================================================
+   DTS Contract Engine — Tailwind 4 + shadcn token wiring
+   Brand source of truth: docs/design-system/BRAND.md +
+   docs/design-system/tokens.css (Dobeu Tech Solutions design system).
+   Light mode is the default for this internal tool; .dark flips.
+   ============================================================ */
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------- Tailwind theme bindings ---------- */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans:
+    var(--font-nunito), "Nunito", "Quicksand", ui-sans-serif, system-ui,
+    -apple-system, sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -39,163 +51,224 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-brand-indigo: var(--brand-indigo);
+  --color-brand-indigo-deep: var(--brand-indigo-deep);
+  --color-brand-amber: var(--brand-amber);
+  --color-brand-cream: var(--brand-cream);
+  --color-brand-ink: var(--brand-ink);
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+  --radius-3xl: 32px;
+  --radius-4xl: 40px;
 }
 
-/* Dobeu Design System - Dark Mode Default */
+/* ---------- Brand primitives (from docs/design-system/tokens.css) ---------- */
 :root {
-  /* Primitives */
-  --brand-indigo-primary: #6b5ce7;
+  /* Brand */
+  --brand-indigo: #6b5ce7;
   --brand-indigo-deep: #4a3fa8;
-  --brand-amber-warm: #f4a261;
-  --brand-cream-soft: #fff8f0;
+  --brand-amber: #f4a261;
+  --brand-cream: #fff8f0;
+  --brand-cream-deep: #f5efe4;
   --brand-dark-surface: #1a1a2e;
   --brand-dark-elevated: #242440;
-  --brand-code-bg-light: #f5f5f7;
-  --brand-code-bg-dark: #0d0d1a;
-  --brand-text-gray: #2d2d3a;
-  --brand-body-text-dark: #e0e0e0;
-  --brand-tint-indigo-10: #e8e5fa;
-  --brand-tint-amber-10: #fef0e0;
-  --brand-neutral-gray: #f5f5f7;
+  --brand-ink: #2d2d3a;
+  --brand-tint-indigo: #e8e5fa;
+  --brand-tint-amber: #fef0e0;
   --brand-border-light: #e0dff5;
   --brand-border-dark: #2a2a45;
-  --semantic-success: #4caf50;
-  --semantic-warning: #f4a261;
-  --semantic-error: #e07a5f;
-  --neutral-white: #ffffff;
-  --neutral-black: #000000;
 
-  /* Type primitives */
-  --font-sans:
-    var(--font-nunito), "Quicksand", ui-sans-serif, system-ui, -apple-system,
-    sans-serif;
-  --font-mono:
-    var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Status */
+  --status-success: #4caf50;
+  --status-warning: #f4a261;
+  --status-error: #e07a5f;
 
-  /* Radii */
-  --radius: 0.75rem; /* 12px default for md */
-
-  /* Default to Dark Mode (Developer-first) */
-  --background: var(--brand-dark-surface);
-  --foreground: var(--neutral-white);
-  --card: var(--brand-dark-elevated);
-  --card-foreground: var(--neutral-white);
-  --popover: var(--brand-dark-elevated);
-  --popover-foreground: var(--neutral-white);
-  --primary: var(--brand-amber-warm); /* CTA in dark mode */
-  --primary-foreground: var(--brand-text-gray);
-  --secondary: var(--brand-dark-elevated);
-  --secondary-foreground: var(--neutral-white);
-  --muted: var(--brand-dark-elevated);
-  --muted-foreground: #9a9ab0;
-  --accent: var(--brand-amber-warm);
-  --accent-foreground: var(--brand-text-gray);
-  --destructive: var(--semantic-error);
-  --border: var(--brand-border-dark);
-  --input: var(--brand-border-dark);
-  --ring: rgba(107, 92, 231, 0.22); /* Indigo ring */
-
-  /* Charts (using Dobeu palette) */
-  --chart-1: var(--brand-indigo-primary);
-  --chart-2: var(--brand-amber-warm);
-  --chart-3: var(--semantic-success);
-  --chart-4: var(--semantic-warning);
-  --chart-5: var(--semantic-error);
-
-  /* Sidebar */
-  --sidebar: var(--brand-dark-elevated);
-  --sidebar-foreground: var(--neutral-white);
-  --sidebar-primary: var(--brand-amber-warm);
-  --sidebar-primary-foreground: var(--brand-text-gray);
-  --sidebar-accent: var(--brand-dark-surface);
-  --sidebar-accent-foreground: var(--neutral-white);
-  --sidebar-border: var(--brand-border-dark);
-  --sidebar-ring: rgba(107, 92, 231, 0.22);
-}
-
-.light {
-  --background: var(--neutral-white);
-  --foreground: var(--brand-text-gray);
-  --card: var(--brand-cream-soft);
-  --card-foreground: var(--brand-text-gray);
-  --popover: var(--neutral-white);
-  --popover-foreground: var(--brand-text-gray);
-  --primary: var(--brand-indigo-primary); /* CTA in light mode */
-  --primary-foreground: var(--neutral-white);
-  --secondary: var(--brand-neutral-gray);
-  --secondary-foreground: var(--brand-text-gray);
-  --muted: var(--brand-neutral-gray);
+  /* Light mode (default for the contract engine) */
+  --background: var(--brand-cream);
+  --foreground: var(--brand-ink);
+  --card: #ffffff;
+  --card-foreground: var(--brand-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--brand-ink);
+  --primary: var(--brand-indigo);
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f7;
+  --secondary-foreground: var(--brand-ink);
+  --muted: #f5f5f7;
   --muted-foreground: #888888;
-  --accent: var(--brand-indigo-primary);
-  --accent-foreground: var(--neutral-white);
-  --destructive: var(--semantic-error);
+  --accent: var(--brand-amber);
+  --accent-foreground: var(--brand-ink);
+  --destructive: var(--status-error);
+  --success: var(--status-success);
+  --warning: var(--status-warning);
   --border: var(--brand-border-light);
   --input: var(--brand-border-light);
-  --ring: rgba(107, 92, 231, 0.22);
-
-  --sidebar: var(--brand-cream-soft);
-  --sidebar-foreground: var(--brand-text-gray);
-  --sidebar-primary: var(--brand-indigo-primary);
-  --sidebar-primary-foreground: var(--neutral-white);
-  --sidebar-accent: var(--brand-neutral-gray);
-  --sidebar-accent-foreground: var(--brand-text-gray);
+  --ring: rgba(107, 92, 231, 0.45);
+  --chart-1: var(--brand-indigo);
+  --chart-2: var(--brand-amber);
+  --chart-3: var(--brand-indigo-deep);
+  --chart-4: #4caf50;
+  --chart-5: #888888;
+  --radius: 12px;
+  --sidebar: var(--brand-cream);
+  --sidebar-foreground: var(--brand-ink);
+  --sidebar-primary: var(--brand-indigo);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--brand-tint-indigo);
+  --sidebar-accent-foreground: var(--brand-indigo-deep);
   --sidebar-border: var(--brand-border-light);
-  --sidebar-ring: rgba(107, 92, 231, 0.22);
+  --sidebar-ring: rgba(107, 92, 231, 0.45);
+
+  /* Shadows — soft, warm, indigo-tinted (per design system) */
+  --shadow-xs: 0 1px 2px rgba(26, 26, 46, 0.06);
+  --shadow-sm: 0 2px 6px rgba(26, 26, 46, 0.08);
+  --shadow-md: 0 6px 18px rgba(26, 26, 46, 0.1);
+  --shadow-lg: 0 16px 40px rgba(26, 26, 46, 0.14);
 }
 
+.dark {
+  --background: var(--brand-dark-surface);
+  --foreground: #e0e0e0;
+  --card: var(--brand-dark-elevated);
+  --card-foreground: #e0e0e0;
+  --popover: var(--brand-dark-elevated);
+  --popover-foreground: #e0e0e0;
+  --primary: var(--brand-indigo);
+  --primary-foreground: #ffffff;
+  --secondary: #2a2a45;
+  --secondary-foreground: #e0e0e0;
+  --muted: #2a2a45;
+  --muted-foreground: #9a9ab0;
+  --accent: var(--brand-amber);
+  --accent-foreground: var(--brand-ink);
+  --destructive: var(--status-error);
+  --success: var(--status-success);
+  --warning: var(--status-warning);
+  --border: var(--brand-border-dark);
+  --input: var(--brand-border-dark);
+  --ring: rgba(244, 162, 97, 0.5);
+  --sidebar: var(--brand-dark-surface);
+  --sidebar-foreground: #e0e0e0;
+  --sidebar-primary: var(--brand-amber);
+  --sidebar-primary-foreground: var(--brand-ink);
+  --sidebar-accent: var(--brand-dark-elevated);
+  --sidebar-accent-foreground: #e0e0e0;
+  --sidebar-border: var(--brand-border-dark);
+  --sidebar-ring: rgba(244, 162, 97, 0.5);
+}
+
+/* ---------- Type scale (Figma /Typography from BRAND.md) ---------- */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-  }
   html {
     @apply font-sans;
   }
-
-  /* Dobeu Typography Overrides */
-  h1,
-  .h1 {
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1 {
+    font-size: 36px;
+    line-height: 1.1;
     font-weight: 800;
     letter-spacing: -0.01em;
-    color: var(--brand-indigo-primary);
+    color: var(--brand-indigo-deep);
   }
-  h2,
-  .h2 {
+  h2 {
+    font-size: 28px;
+    line-height: 1.15;
     font-weight: 700;
     letter-spacing: -0.005em;
-    color: var(--brand-indigo-primary);
-  }
-  h3,
-  .h3 {
-    font-weight: 700;
-    color: var(--brand-indigo-primary);
-  }
-  h4,
-  .h4 {
-    font-weight: 700;
-    color: var(--brand-indigo-primary);
-  }
-
-  .light h1,
-  .light .h1,
-  .light h2,
-  .light .h2,
-  .light h3,
-  .light .h3,
-  .light h4,
-  .light .h4 {
     color: var(--brand-indigo-deep);
+  }
+  h3 {
+    font-size: 22px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: var(--brand-indigo-deep);
+  }
+  h4 {
+    font-size: 18px;
+    line-height: 1.3;
+    font-weight: 700;
+    color: var(--brand-indigo-deep);
+  }
+  .dark h1,
+  .dark h2,
+  .dark h3,
+  .dark h4 {
+    color: var(--brand-indigo);
+  }
+}
+
+/* ---------- Numeric / tabular utilities ---------- */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---------- The Overlap signature gradient hairline ----------
+   Subtle indigo→amber strip used under the navbar to echo the
+   brand mark's two-circle motif without showing the mark itself. */
+.brand-hairline {
+  background: linear-gradient(
+    90deg,
+    var(--brand-indigo) 0%,
+    var(--brand-indigo-deep) 50%,
+    var(--brand-amber) 100%
+  );
+}
+
+/* ---------- Eyebrow label utility (numbered section headings) ---------- */
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--brand-indigo);
+}
+
+/* ---------- Print styles (contract preview) ---------- */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #print-area,
+  #print-area * {
+    visibility: visible !important;
+  }
+  #print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+  #print-area .no-print,
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    margin: 0.6in 0.7in;
+    size: letter;
+  }
+  .pgbreak {
+    page-break-before: always;
+  }
+  .avoid-break {
+    page-break-inside: avoid;
   }
 }
