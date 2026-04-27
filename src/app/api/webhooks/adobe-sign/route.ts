@@ -5,6 +5,13 @@ import {
 } from "@/lib/integrations/adobe-sign";
 import { createServiceClient } from "@/lib/supabase/service";
 import { recordAudit } from "@/lib/db/audit";
+import {
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
+} from "@/lib/mongo/webhook-payloads";
+
+// Native mongodb driver is Node-only — this route runs on Node by default.
+export const runtime = "nodejs";
 
 // Adobe Sign verifies the webhook URL on registration by sending a GET that
 // expects the X-AdobeSign-ClientId header to be echoed back in the response.
@@ -28,7 +35,21 @@ interface AdobeWebhookPayload {
 
 export async function POST(req: Request) {
   const clientIdHeader = req.headers.get("x-adobesign-clientid");
+
+  // Capture raw bytes once so we can both archive forensically and parse below.
+  const raw = await req.text();
+  const archiveId = await archiveWebhookPayload({
+    provider: "adobe-sign",
+    headers: req.headers,
+    rawBody: raw,
+  });
+
   if (!verifyWebhookClientId(clientIdHeader)) {
+    await updateWebhookPayloadStatus(archiveId, {
+      signatureVerified: false,
+      processingStatus: "failed",
+      processingError: "invalid client id",
+    });
     return NextResponse.json(
       { ok: false, error: "invalid client id" },
       {
@@ -39,13 +60,23 @@ export async function POST(req: Request) {
 
   let payload: AdobeWebhookPayload;
   try {
-    payload = (await req.json()) as AdobeWebhookPayload;
+    payload = JSON.parse(raw) as AdobeWebhookPayload;
   } catch {
+    await updateWebhookPayloadStatus(archiveId, {
+      signatureVerified: true,
+      processingStatus: "failed",
+      processingError: "bad json",
+    });
     return NextResponse.json({ ok: false, error: "bad json" }, { status: 400 });
   }
 
   const event = payload.event ?? "unknown";
   const agreementId = payload.agreement?.id;
+  await updateWebhookPayloadStatus(archiveId, {
+    signatureVerified: true,
+    processingStatus: "verified",
+    eventId: agreementId ?? null,
+  });
 
   // Always echo the client id back per Adobe's spec.
   const ok = NextResponse.json(
@@ -69,6 +100,9 @@ export async function POST(req: Request) {
       actorId: null,
       action: "adobe_sign.webhook.unmatched",
       diff: { event, agreementId },
+    });
+    await updateWebhookPayloadStatus(archiveId, {
+      processingStatus: "processed",
     });
     return ok;
   }
@@ -129,6 +163,10 @@ export async function POST(req: Request) {
           message: e instanceof Error ? e.message : String(e),
         },
       });
+      await updateWebhookPayloadStatus(archiveId, {
+        processingStatus: "failed",
+        processingError: e instanceof Error ? e.message : String(e),
+      });
       // Return 5xx so Adobe Sign retries transient failures (storage down, etc.).
       // The handler is idempotent (upsert on storage, status check on DB).
       return new NextResponse(
@@ -152,5 +190,8 @@ export async function POST(req: Request) {
     });
   }
 
+  await updateWebhookPayloadStatus(archiveId, {
+    processingStatus: "processed",
+  });
   return ok;
 }

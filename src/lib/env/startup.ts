@@ -12,6 +12,7 @@ const REQUIRED_PRODUCTION_ENV = [
   "INTERCOM_ACCESS_TOKEN",
   "CLIENT_PORTAL_JWT_SECRET",
   "RESEND_API_KEY",
+  "MONGODB_URI",
 ] as const;
 
 function normalize(value: string | undefined): string {
