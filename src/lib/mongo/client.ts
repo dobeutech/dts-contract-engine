@@ -1,0 +1,151 @@
+import "server-only";
+import { MongoClient, type Db } from "mongodb";
+
+// Singleton MongoClient. Reuses the same TCP pool across requests in
+// production and survives Next.js HMR in development by stashing the
+// promise on globalThis. Mirrors the discipline of
+// src/lib/supabase/service.ts — one factory, no client-side import.
+//
+// IMPORTANT: the native mongodb driver is Node-only. Do not import this
+// module from any route that pins `runtime = 'edge'`. Edge callers
+// should fetch the internal Node-runtime API at
+// /api/internal/webhook-payloads or call the Supabase Edge Function at
+// supabase/functions/webhook-payloads-read.
+
+const DEFAULT_DB_NAME = "dts_contract_engine";
+
+interface MongoGlobal {
+  promise: Promise<MongoClient> | undefined;
+  indexesEnsured: boolean;
+  lastIndexAttempt: number;
+}
+
+const globalForMongo = globalThis as unknown as { __dtsMongo?: MongoGlobal };
+
+function state(): MongoGlobal {
+  if (!globalForMongo.__dtsMongo) {
+    globalForMongo.__dtsMongo = {
+      promise: undefined,
+      indexesEnsured: false,
+      lastIndexAttempt: 0,
+    };
+  }
+  return globalForMongo.__dtsMongo;
+}
+
+function connect(): Promise<MongoClient> {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("MONGODB_URI is not set");
+  }
+  const client = new MongoClient(uri, {
+    appName: "dts-contract-engine",
+    // Keep the pool small; webhooks and audit writes are bursty but low qps.
+    maxPoolSize: 10,
+    minPoolSize: 0,
+    // 2s is short enough that an unreachable cluster does not blow the
+    // webhook budget (Stripe/Adobe Sign retry on slow responses), and
+    // long enough that a healthy Atlas always beats it. Per-call
+    // timeouts on the fire-and-forget paths cap blocking even further.
+    serverSelectionTimeoutMS: 2_000,
+  });
+  return client.connect();
+}
+
+// Race a promise against a fallback returned after `ms`. Used by
+// fire-and-forget writers so the webhook hot path never blocks longer
+// than the timeout, even when Mongo is fully unreachable. The
+// underlying promise continues running in the background.
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export async function getMongoClient(): Promise<MongoClient> {
+  const s = state();
+  if (!s.promise) {
+    s.promise = connect().catch((err) => {
+      // Reset so the next call retries instead of returning a poisoned promise.
+      s.promise = undefined;
+      throw err;
+    });
+  }
+  return s.promise;
+}
+
+function dbName(): string {
+  return process.env.MONGODB_DB_NAME?.trim() || DEFAULT_DB_NAME;
+}
+
+interface GetMongoDbOptions {
+  // Health checks and other lightweight callers should skip index
+  // creation so a slow first-time ensure can't inflate latency or
+  // create misleading noise on those endpoints.
+  skipIndexEnsure?: boolean;
+}
+
+export async function getMongoDb(
+  options: GetMongoDbOptions = {},
+): Promise<Db> {
+  const client = await getMongoClient();
+  const db = client.db(dbName());
+  if (!options.skipIndexEnsure) await ensureIndexes(db);
+  return db;
+}
+
+// Backoff between retries when index creation fails. Long enough that a
+// persistent failure (auth, IndexOptionsConflict from a TTL spec mismatch)
+// does not produce a log storm; short enough that a transient outage
+// (Atlas failover, network blip) recovers within a few minutes without
+// requiring a deploy.
+const INDEX_RETRY_INTERVAL_MS = 60_000;
+
+async function ensureIndexes(db: Db): Promise<void> {
+  const s = state();
+  if (s.indexesEnsured) return;
+  if (Date.now() - s.lastIndexAttempt < INDEX_RETRY_INTERVAL_MS) return;
+  s.lastIndexAttempt = Date.now();
+  try {
+    await Promise.all([
+      db
+        .collection("webhook_payloads")
+        .createIndex({ provider: 1, received_at: -1 }),
+      db.collection("webhook_payloads").createIndex(
+        { event_id: 1 },
+        // Partial — index only docs where event_id is actually known.
+        // We always write the field (with `null` for unmatched webhooks),
+        // so a sparse index would still index every document. A partial
+        // filter on $type:"string" keeps the index small and selective.
+        { partialFilterExpression: { event_id: { $type: "string" } } },
+      ),
+      db.collection("webhook_payloads").createIndex(
+        { received_at: 1 },
+        // 90-day TTL bounds storage; tune via env later if needed.
+        { expireAfterSeconds: 60 * 60 * 24 * 90 },
+      ),
+      db
+        .collection("audit_events")
+        .createIndex({ entity_type: 1, entity_id: 1, occurred_at: -1 }),
+      db
+        .collection("audit_events")
+        .createIndex({ action: 1, occurred_at: -1 }),
+    ]);
+    s.indexesEnsured = true;
+  } catch (e) {
+    console.error(
+      `[mongo] index ensure failed (will retry after ${INDEX_RETRY_INTERVAL_MS}ms)`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}

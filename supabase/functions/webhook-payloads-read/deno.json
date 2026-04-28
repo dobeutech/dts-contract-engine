@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "std/": "https://deno.land/std@0.224.0/",
+    "mongo": "https://deno.land/x/mongo@v0.32.0/mod.ts"
+  }
+}

@@ -6,6 +6,8 @@ const {
   createServiceClient,
   recordAudit,
   sendKickoffNotification,
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
 } = vi.hoisted(() => {
   const constructEvent = vi.fn();
   return {
@@ -14,6 +16,8 @@ const {
     createServiceClient: vi.fn(),
     recordAudit: vi.fn(),
     sendKickoffNotification: vi.fn(),
+    archiveWebhookPayload: vi.fn(),
+    updateWebhookPayloadStatus: vi.fn(),
   };
 });
 
@@ -31,6 +35,11 @@ vi.mock("@/lib/db/audit", () => ({
 
 vi.mock("@/lib/integrations/email", () => ({
   sendKickoffNotification,
+}));
+
+vi.mock("@/lib/mongo/webhook-payloads", () => ({
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
 }));
 
 import { POST } from "./route";
@@ -52,6 +61,8 @@ describe("stripe webhook route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+    archiveWebhookPayload.mockResolvedValue("mock_archive_id");
+    updateWebhookPayloadStatus.mockResolvedValue(undefined);
   });
 
   it("returns 400 when signature config is missing", async () => {
@@ -66,6 +77,27 @@ describe("stripe webhook route", () => {
     });
     const res = await POST(requestWithBody("{}"));
     expect(res.status).toBe(400);
+    expect(archiveWebhookPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "stripe", rawBody: "{}" }),
+    );
+    expect(updateWebhookPayloadStatus).toHaveBeenCalledWith(
+      "mock_archive_id",
+      expect.objectContaining({
+        signatureVerified: false,
+        processingStatus: "failed",
+      }),
+    );
+  });
+
+  it("still returns 200 when archive write fails", async () => {
+    archiveWebhookPayload.mockResolvedValue(null);
+    constructEvent.mockReturnValue({
+      id: "evt_x",
+      type: "ping",
+      data: { object: {} },
+    });
+    const res = await POST(requestWithBody('{"id":"evt"}'));
+    expect(res.status).toBe(200);
   });
 
   it("handles checkout.session.completed and notifies team", async () => {
@@ -77,9 +109,11 @@ describe("stripe webhook route", () => {
           id: "cs_1",
           amount_total: 4200,
           payment_intent: "pi_1",
+          payment_status: "paid",
           metadata: {
             quote_id: "quote_1",
             client_id: "client_1",
+            kind: "dts.deposit",
           },
         },
       },

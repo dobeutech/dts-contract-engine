@@ -1,0 +1,181 @@
+// Supabase Edge Function — Deno runtime.
+// Reference implementation of an edge-runtime read path against MongoDB
+// Atlas. Lives outside the Next.js app because the Vercel Edge Runtime
+// cannot run the native mongodb driver; the Deno driver works on
+// Supabase's edge.
+//
+// Deploy:
+//   supabase secrets set MONGODB_URI=...   # in the Supabase project, not Vercel
+//   supabase functions deploy webhook-payloads-read
+//
+// Auth, layered to match the Node /api/internal/webhook-payloads route:
+//  1. Supabase's gateway verifies the JWT before invoking this function
+//     when `verify_jwt = true` (the default).
+//  2. We additionally require an INTERNAL_API_BEARER_TOKEN secret in an
+//     `x-internal-bearer` header. Archived webhook bodies contain
+//     Stripe customer PII and a valid user JWT alone is not a strong
+//     enough gate. The token must be set via
+//     `supabase secrets set INTERNAL_API_BEARER_TOKEN=...` to match the
+//     value in Vercel env. If unset, this function fail-closes with
+//     503, mirroring the Node route.
+
+// @ts-expect-error — Deno-only import resolved at deploy time, not in Node TS.
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+// @ts-expect-error — Deno-only import resolved at deploy time, not in Node TS.
+import { MongoClient } from "https://deno.land/x/mongo@v0.32.0/mod.ts";
+
+// @ts-expect-error — Deno globals unavailable in Node typecheck.
+const env = Deno.env;
+
+const ALLOWED_PROVIDERS = new Set(["stripe", "adobe-sign"]);
+
+let cachedClient: unknown = null;
+
+async function getDb() {
+  if (cachedClient) return cachedClient;
+  const uri = env.get("MONGODB_URI");
+  if (!uri) throw new Error("MONGODB_URI not set in function secrets");
+  const dbName = env.get("MONGODB_DB_NAME") ?? "dts_contract_engine";
+  const client = new MongoClient();
+  await client.connect(uri);
+  cachedClient = client.database(dbName);
+  return cachedClient;
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+// deno-lint-ignore no-explicit-any
+const cryptoSubtle: any = (globalThis as any).crypto.subtle;
+
+async function bearerMatches(
+  presented: string,
+  expected: string,
+): Promise<boolean> {
+  // Hash both sides to equalize lengths and remove the per-byte timing
+  // channel against the raw secret. Web Crypto's digest is constant-time
+  // for a given input length.
+  const enc = new TextEncoder();
+  const a = new Uint8Array(
+    await cryptoSubtle.digest("SHA-256", enc.encode(presented)),
+  );
+  const b = new Uint8Array(
+    await cryptoSubtle.digest("SHA-256", enc.encode(expected)),
+  );
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+serve(async (req: Request) => {
+  if (req.method !== "GET") {
+    return new Response(JSON.stringify({ ok: false, error: "method" }), {
+      status: 405,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const expectedToken = env.get("INTERNAL_API_BEARER_TOKEN")?.trim();
+  if (!expectedToken) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "internal api bearer not configured",
+      }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
+  }
+  const presented = req.headers.get("x-internal-bearer")?.trim() ?? "";
+  if (!presented || !(await bearerMatches(presented, expectedToken))) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "forbidden" }),
+      { status: 403, headers: { "content-type": "application/json" } },
+    );
+  }
+  try {
+    const url = new URL(req.url);
+    const providerParam = url.searchParams.get("provider");
+    // null = absent (no filter); any other value (including "") must
+    // match an allowed provider, otherwise treat as invalid input.
+    if (providerParam !== null && !ALLOWED_PROVIDERS.has(providerParam)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid provider" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    const provider = providerParam ?? undefined;
+    const eventId = url.searchParams.get("event_id") ?? undefined;
+    const sinceParam = url.searchParams.get("since");
+    const since = sinceParam ? new Date(sinceParam) : undefined;
+    if (since && Number.isNaN(since.getTime())) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid since" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    const limitParam = url.searchParams.get("limit");
+    const parsedLimit = limitParam
+      ? Number.parseInt(limitParam, 10)
+      : undefined;
+    if (parsedLimit !== undefined && Number.isNaN(parsedLimit)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid limit" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    const limit = clamp(parsedLimit ?? 25, 1, 200);
+
+    // deno-lint-ignore no-explicit-any
+    const filter: any = {};
+    if (provider) filter.provider = provider;
+    if (eventId) filter.event_id = eventId;
+    if (since) filter.received_at = { $gte: since };
+
+    // deno-lint-ignore no-explicit-any
+    const db = (await getDb()) as any;
+    const docs = await db
+      .collection("webhook_payloads")
+      .find(filter)
+      .sort({ received_at: -1 })
+      .limit(limit)
+      .toArray();
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        count: docs.length,
+        // Mirrors the response shape of /api/internal/webhook-payloads
+        // exactly so callers can swap endpoints with no parsing changes.
+        // deno-lint-ignore no-explicit-any
+        payloads: docs.map((d: any) => ({
+          id: String(d._id),
+          provider: d.provider,
+          received_at:
+            d.received_at instanceof Date
+              ? d.received_at.toISOString()
+              : new Date(d.received_at).toISOString(),
+          event_id: d.event_id,
+          signature_verified: d.signature_verified,
+          processing_status: d.processing_status,
+          processing_error: d.processing_error,
+          headers: d.headers,
+          raw_body: d.raw_body,
+          // Backward-compat: docs predating the size cap won't have
+          // raw_body_truncated; default to false rather than undefined
+          // so the Node and Deno responses match exactly.
+          raw_body_truncated: d.raw_body_truncated ?? false,
+          parsed_body: d.parsed_body,
+        })),
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  } catch (e) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: e instanceof Error ? e.message : "unknown",
+      }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
+});

@@ -3,6 +3,10 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/integrations/stripe";
 import { createServiceClient } from "@/lib/supabase/service";
 import { recordAudit } from "@/lib/db/audit";
+import {
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
+} from "@/lib/mongo/webhook-payloads";
 import { sendKickoffNotification } from "@/lib/integrations/email";
 
 // Stripe requires the raw body for signature verification.
@@ -11,23 +15,50 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  // Read + archive the raw body BEFORE any header / config check so we
+  // capture *every* inbound request — forged payloads, misconfigured
+  // deploys missing the webhook secret, anything. The 90-day TTL plus
+  // 1 MiB body cap on the archive bound storage abuse.
+  const raw = await req.text();
+  const archiveId = await archiveWebhookPayload({
+    provider: "stripe",
+    headers: req.headers,
+    rawBody: raw,
+  });
+
   if (!sig || !secret) {
+    await updateWebhookPayloadStatus(archiveId, {
+      signatureVerified: false,
+      processingStatus: "failed",
+      processingError: "missing signature config",
+    });
     return NextResponse.json(
       { ok: false, error: "missing signature config" },
       { status: 400 },
     );
   }
 
-  const raw = await req.text();
   let event: Stripe.Event;
   try {
     event = getStripe().webhooks.constructEvent(raw, sig, secret);
   } catch (e) {
+    await updateWebhookPayloadStatus(archiveId, {
+      signatureVerified: false,
+      processingStatus: "failed",
+      processingError: e instanceof Error ? e.message : "verify failed",
+    });
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "verify failed" },
       { status: 400 },
     );
   }
+
+  await updateWebhookPayloadStatus(archiveId, {
+    signatureVerified: true,
+    processingStatus: "verified",
+    eventId: event.id,
+  });
 
   try {
     if (event.type === "checkout.session.completed") {
@@ -94,6 +125,10 @@ export async function POST(req: Request) {
         message: e instanceof Error ? e.message : String(e),
       },
     });
+    await updateWebhookPayloadStatus(archiveId, {
+      processingStatus: "failed",
+      processingError: e instanceof Error ? e.message : String(e),
+    });
     // Return 5xx so Stripe retries transient failures (DB down, etc.).
     // The handler is idempotent: duplicate events are safe to process.
     return NextResponse.json(
@@ -102,5 +137,8 @@ export async function POST(req: Request) {
     );
   }
 
+  await updateWebhookPayloadStatus(archiveId, {
+    processingStatus: "processed",
+  });
   return NextResponse.json({ received: true });
 }

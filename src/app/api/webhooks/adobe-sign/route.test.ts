@@ -5,11 +5,15 @@ const {
   downloadSignedPdf,
   createServiceClient,
   recordAudit,
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
 } = vi.hoisted(() => ({
   verifyWebhookClientId: vi.fn(),
   downloadSignedPdf: vi.fn(),
   createServiceClient: vi.fn(),
   recordAudit: vi.fn(),
+  archiveWebhookPayload: vi.fn(),
+  updateWebhookPayloadStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/integrations/adobe-sign", () => ({
@@ -23,6 +27,11 @@ vi.mock("@/lib/supabase/service", () => ({
 
 vi.mock("@/lib/db/audit", () => ({
   recordAudit,
+}));
+
+vi.mock("@/lib/mongo/webhook-payloads", () => ({
+  archiveWebhookPayload,
+  updateWebhookPayloadStatus,
 }));
 
 import { GET, POST } from "./route";
@@ -41,6 +50,8 @@ function makeReq(body: string, clientId = "client-id"): Request {
 describe("adobe-sign webhook route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    archiveWebhookPayload.mockResolvedValue("mock_archive_id");
+    updateWebhookPayloadStatus.mockResolvedValue(undefined);
   });
 
   it("returns 400 for handshake GET without client id", async () => {
@@ -56,6 +67,16 @@ describe("adobe-sign webhook route", () => {
     verifyWebhookClientId.mockReturnValue(false);
     const res = await POST(makeReq(JSON.stringify({ event: "unknown" })));
     expect(res.status).toBe(401);
+    expect(archiveWebhookPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "adobe-sign" }),
+    );
+    expect(updateWebhookPayloadStatus).toHaveBeenCalledWith(
+      "mock_archive_id",
+      expect.objectContaining({
+        signatureVerified: false,
+        processingStatus: "failed",
+      }),
+    );
   });
 
   it("records unmatched agreement ids and returns success", async () => {
