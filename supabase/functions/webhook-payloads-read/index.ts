@@ -49,10 +49,14 @@ serve(async (req: Request) => {
   }
   try {
     const url = new URL(req.url);
-    const providerParam = url.searchParams.get("provider") ?? undefined;
-    const provider = providerParam && ALLOWED_PROVIDERS.has(providerParam)
-      ? providerParam
-      : undefined;
+    const providerParam = url.searchParams.get("provider");
+    if (providerParam && !ALLOWED_PROVIDERS.has(providerParam)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid provider" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    const provider = providerParam ?? undefined;
     const eventId = url.searchParams.get("event_id") ?? undefined;
     const sinceParam = url.searchParams.get("since");
     const since = sinceParam ? new Date(sinceParam) : undefined;

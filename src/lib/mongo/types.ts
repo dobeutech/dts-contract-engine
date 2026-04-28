@@ -15,6 +15,7 @@ export interface WebhookPayloadDoc {
   event_id: string | null;
   headers: Record<string, string>;
   raw_body: string;
+  raw_body_truncated: boolean;
   parsed_body: unknown | null;
   signature_verified: boolean | null;
   processing_status: WebhookProcessingStatus;

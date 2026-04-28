@@ -32,7 +32,13 @@ supabase secrets set MONGODB_DB_NAME="dts_contract_engine"   # optional
 
 ## Deploy
 
+This directory is intentionally excluded from the project's ESLint and
+TypeScript checks (the URL imports and `Deno` globals don't resolve
+under Node). Run Deno's own toolchain before deploy:
+
 ```bash
+deno lint  supabase/functions/webhook-payloads-read
+deno check supabase/functions/webhook-payloads-read/index.ts
 supabase functions deploy webhook-payloads-read
 ```
 

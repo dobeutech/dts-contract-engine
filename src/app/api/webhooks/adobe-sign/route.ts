@@ -72,9 +72,12 @@ export async function POST(req: Request) {
 
   const event = payload.event ?? "unknown";
   const agreementId = payload.agreement?.id;
+  // If no agreementId, the early return below ends the request and we
+  // never set "processed" — short-circuit it here so the archive doc
+  // doesn't sit at "verified" forever.
   await updateWebhookPayloadStatus(archiveId, {
     signatureVerified: true,
-    processingStatus: "verified",
+    processingStatus: agreementId ? "verified" : "processed",
     eventId: agreementId ?? null,
   });
 

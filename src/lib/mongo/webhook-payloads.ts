@@ -11,6 +11,12 @@ import type {
 // path. Pairs with the 2s serverSelectionTimeoutMS in the client.
 const FIRE_AND_FORGET_TIMEOUT_MS = 1_500;
 
+// Hard cap on persisted body size. The /api/webhooks/* namespace is
+// public, so without a cap an attacker could send oversized bodies and
+// drive Mongo storage/egress (TTL doesn't prevent the spike). 1 MiB is
+// well above any legitimate Stripe / Adobe Sign event.
+const MAX_RAW_BODY_BYTES = 1_048_576;
+
 // Headers we never persist — credentials or signatures whose value once
 // verified is dead weight at best, attacker bait at worst.
 const REDACTED_HEADER_PREFIXES = [
@@ -48,6 +54,15 @@ function safeParseJson(raw: string): unknown | null {
   }
 }
 
+function maybeTruncate(raw: string): { body: string; truncated: boolean } {
+  if (Buffer.byteLength(raw, "utf8") <= MAX_RAW_BODY_BYTES) {
+    return { body: raw, truncated: false };
+  }
+  // Slice in characters; persisted body may be slightly under the byte cap
+  // for multi-byte chars, which is fine — we just never exceed it.
+  return { body: raw.slice(0, MAX_RAW_BODY_BYTES), truncated: true };
+}
+
 export interface ArchiveInput {
   provider: WebhookProvider;
   headers: Headers | Record<string, string>;
@@ -58,41 +73,51 @@ export interface ArchiveInput {
 }
 
 // Insert the raw payload before any processing. Fire-and-forget: never
-// throws into the webhook hot path. Returns the inserted _id, or null if
-// the write failed — callers can use the id to update status later, but
-// must tolerate null.
+// throws into the webhook hot path.
+//
+// The _id is allocated on the client side and returned synchronously,
+// even if the insert is still in flight or fails. That means subsequent
+// updateWebhookPayloadStatus() calls always have a valid target — if
+// the insert eventually lands (slow connect, transient outage), the
+// status updates find the doc; if the insert never lands, the updates
+// are no-ops via updateOne's natural no-match behavior.
 export async function archiveWebhookPayload(
   input: ArchiveInput,
-): Promise<ObjectId | null> {
-  return withTimeout(_archive(input), FIRE_AND_FORGET_TIMEOUT_MS, null);
+): Promise<ObjectId> {
+  const id = new ObjectId();
+  await withTimeout(_archive(input, id), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
+  return id;
 }
 
-async function _archive(input: ArchiveInput): Promise<ObjectId | null> {
+async function _archive(input: ArchiveInput, id: ObjectId): Promise<void> {
   try {
     const db = await getMongoDb();
     const now = new Date();
-    const doc: Omit<WebhookPayloadDoc, "_id"> = {
+    const { body, truncated } = maybeTruncate(input.rawBody);
+    const doc: WebhookPayloadDoc = {
+      _id: id,
       provider: input.provider,
       received_at: now,
       event_id: input.eventId ?? null,
       headers: redactHeaders(input.headers),
-      raw_body: input.rawBody,
-      parsed_body: safeParseJson(input.rawBody),
+      raw_body: body,
+      raw_body_truncated: truncated,
+      // Skip JSON.parse on truncated payloads — the slice almost certainly
+      // breaks the structure and we'd produce a misleading parsed_body.
+      parsed_body: truncated ? null : safeParseJson(body),
       signature_verified: input.signatureVerified ?? null,
       processing_status: input.processingStatus ?? "received",
       processing_error: null,
       created_at: now,
       updated_at: now,
     };
-    const res = await db.collection<Omit<WebhookPayloadDoc, "_id">>(COLLECTION).insertOne(doc);
-    return res.insertedId;
+    await db.collection<WebhookPayloadDoc>(COLLECTION).insertOne(doc);
   } catch (e) {
     console.error(
       "[mongo:webhook_payloads] archive failed",
       e instanceof Error ? e.message : e,
       input.provider,
     );
-    return null;
   }
 }
 

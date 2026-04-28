@@ -42,10 +42,9 @@ describe("archiveWebhookPayload", () => {
     consoleSpy.mockRestore();
   });
 
-  it("inserts the raw body and returns the new id", async () => {
+  it("returns the pre-allocated _id and inserts with that id", async () => {
     mockDb();
-    const id = new ObjectId();
-    insertOne.mockResolvedValue({ insertedId: id });
+    insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
     const result = await archiveWebhookPayload({
       provider: "stripe",
@@ -53,11 +52,16 @@ describe("archiveWebhookPayload", () => {
       rawBody: '{"x":1}',
     });
 
-    expect(result).toBe(id);
+    expect(result).toBeInstanceOf(ObjectId);
+    const doc = insertOne.mock.calls[0][0] as { _id: ObjectId };
+    // The id passed to the insert must equal the id returned to the caller —
+    // that's how status updates can target docs even if the insert is slow.
+    expect(doc._id.equals(result)).toBe(true);
     expect(insertOne).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "stripe",
         raw_body: '{"x":1}',
+        raw_body_truncated: false,
         parsed_body: { x: 1 },
         processing_status: "received",
         signature_verified: null,
@@ -103,7 +107,7 @@ describe("archiveWebhookPayload", () => {
     expect(doc.parsed_body).toBeNull();
   });
 
-  it("returns null and logs when the insert throws", async () => {
+  it("still returns the pre-allocated id and logs when the insert throws", async () => {
     mockDb();
     insertOne.mockRejectedValue(new Error("mongo down"));
 
@@ -113,15 +117,45 @@ describe("archiveWebhookPayload", () => {
       rawBody: "{}",
     });
 
-    expect(result).toBeNull();
+    // Even on failure we return the pre-allocated id so callers'
+    // updateWebhookPayloadStatus calls remain best-effort no-ops rather
+    // than being skipped entirely.
+    expect(result).toBeInstanceOf(ObjectId);
     expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it("truncates oversized bodies and skips JSON parse", async () => {
+    mockDb();
+    insertOne.mockResolvedValue({ insertedId: new ObjectId() });
+
+    const oversized = "x".repeat(1_048_577);
+    await archiveWebhookPayload({
+      provider: "stripe",
+      headers: {},
+      rawBody: oversized,
+    });
+
+    const doc = insertOne.mock.calls[0][0] as {
+      raw_body: string;
+      raw_body_truncated: boolean;
+      parsed_body: unknown;
+    };
+    expect(doc.raw_body_truncated).toBe(true);
+    expect(doc.raw_body.length).toBe(1_048_576);
+    expect(doc.parsed_body).toBeNull();
   });
 });
 
 describe("updateWebhookPayloadStatus", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
   });
 
   it("does nothing when id is null", async () => {
@@ -152,7 +186,7 @@ describe("updateWebhookPayloadStatus", () => {
     );
   });
 
-  it("swallows errors silently", async () => {
+  it("does not throw when the update fails", async () => {
     mockDb();
     updateOne.mockRejectedValue(new Error("nope"));
     await expect(

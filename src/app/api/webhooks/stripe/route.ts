@@ -15,22 +15,29 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!sig || !secret) {
-    return NextResponse.json(
-      { ok: false, error: "missing signature config" },
-      { status: 400 },
-    );
-  }
 
+  // Read + archive the raw body BEFORE any header / config check so we
+  // capture *every* inbound request — forged payloads, misconfigured
+  // deploys missing the webhook secret, anything. The 90-day TTL plus
+  // 1 MiB body cap on the archive bound storage abuse.
   const raw = await req.text();
-  // Archive raw body BEFORE signature verification so even forged payloads
-  // are captured for forensics. The 90-day TTL on the collection bounds
-  // storage abuse.
   const archiveId = await archiveWebhookPayload({
     provider: "stripe",
     headers: req.headers,
     rawBody: raw,
   });
+
+  if (!sig || !secret) {
+    await updateWebhookPayloadStatus(archiveId, {
+      signatureVerified: false,
+      processingStatus: "failed",
+      processingError: "missing signature config",
+    });
+    return NextResponse.json(
+      { ok: false, error: "missing signature config" },
+      { status: 400 },
+    );
+  }
 
   let event: Stripe.Event;
   try {

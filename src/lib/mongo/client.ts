@@ -17,13 +17,18 @@ const DEFAULT_DB_NAME = "dts_contract_engine";
 interface MongoGlobal {
   promise: Promise<MongoClient> | undefined;
   indexesEnsured: boolean;
+  lastIndexAttempt: number;
 }
 
 const globalForMongo = globalThis as unknown as { __dtsMongo?: MongoGlobal };
 
 function state(): MongoGlobal {
   if (!globalForMongo.__dtsMongo) {
-    globalForMongo.__dtsMongo = { promise: undefined, indexesEnsured: false };
+    globalForMongo.__dtsMongo = {
+      promise: undefined,
+      indexesEnsured: false,
+      lastIndexAttempt: 0,
+    };
   }
   return globalForMongo.__dtsMongo;
 }
@@ -90,16 +95,18 @@ export async function getMongoDb(): Promise<Db> {
   return db;
 }
 
+// Backoff between retries when index creation fails. Long enough that a
+// persistent failure (auth, IndexOptionsConflict from a TTL spec mismatch)
+// does not produce a log storm; short enough that a transient outage
+// (Atlas failover, network blip) recovers within a few minutes without
+// requiring a deploy.
+const INDEX_RETRY_INTERVAL_MS = 60_000;
+
 async function ensureIndexes(db: Db): Promise<void> {
   const s = state();
   if (s.indexesEnsured) return;
-  // Mark before attempting so a persistent failure (e.g. IndexOptionsConflict
-  // from a TTL spec mismatch on an existing index) does not retry on every
-  // request. Mongo's createIndex is idempotent for matching specs, so the
-  // first successful attempt is the only one that matters; if the attempt
-  // fails, an operator should investigate via the logged error rather than
-  // letting the hot path tight-loop.
-  s.indexesEnsured = true;
+  if (Date.now() - s.lastIndexAttempt < INDEX_RETRY_INTERVAL_MS) return;
+  s.lastIndexAttempt = Date.now();
   try {
     await Promise.all([
       db
@@ -120,9 +127,10 @@ async function ensureIndexes(db: Db): Promise<void> {
         .collection("audit_events")
         .createIndex({ action: 1, occurred_at: -1 }),
     ]);
+    s.indexesEnsured = true;
   } catch (e) {
     console.error(
-      "[mongo] index ensure failed (will not retry until process restart)",
+      `[mongo] index ensure failed (will retry after ${INDEX_RETRY_INTERVAL_MS}ms)`,
       e instanceof Error ? e.message : e,
     );
   }
