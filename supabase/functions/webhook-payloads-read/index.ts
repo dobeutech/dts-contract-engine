@@ -68,11 +68,17 @@ serve(async (req: Request) => {
         { status: 400, headers: { "content-type": "application/json" } },
       );
     }
-    const limit = clamp(
-      Number.parseInt(url.searchParams.get("limit") ?? "25", 10) || 25,
-      1,
-      200,
-    );
+    const limitParam = url.searchParams.get("limit");
+    const parsedLimit = limitParam
+      ? Number.parseInt(limitParam, 10)
+      : undefined;
+    if (parsedLimit !== undefined && Number.isNaN(parsedLimit)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "invalid limit" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    const limit = clamp(parsedLimit ?? 25, 1, 200);
 
     // deno-lint-ignore no-explicit-any
     const filter: any = {};
@@ -93,20 +99,26 @@ serve(async (req: Request) => {
       JSON.stringify({
         ok: true,
         count: docs.length,
+        // Mirrors the response shape of /api/internal/webhook-payloads
+        // exactly so callers can swap endpoints with no parsing changes.
         // deno-lint-ignore no-explicit-any
         payloads: docs.map((d: any) => ({
           id: String(d._id),
           provider: d.provider,
-          received_at: d.received_at
-            ? new Date(d.received_at).toISOString()
-            : d.received_at,
+          received_at:
+            d.received_at instanceof Date
+              ? d.received_at.toISOString()
+              : new Date(d.received_at).toISOString(),
           event_id: d.event_id,
           signature_verified: d.signature_verified,
           processing_status: d.processing_status,
           processing_error: d.processing_error,
           headers: d.headers,
           raw_body: d.raw_body,
-          raw_body_truncated: d.raw_body_truncated,
+          // Backward-compat: docs predating the size cap won't have
+          // raw_body_truncated; default to false rather than undefined
+          // so the Node and Deno responses match exactly.
+          raw_body_truncated: d.raw_body_truncated ?? false,
           parsed_body: d.parsed_body,
         })),
       }),

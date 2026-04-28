@@ -13,6 +13,14 @@ vi.mock("./client", () => ({
   withTimeout: <T>(p: Promise<T>) => p,
 }));
 
+// archiveWebhookPayload / updateWebhookPayloadStatus are intentionally
+// detached (fire-and-forget) — the public function returns synchronously
+// while the Mongo insert/update runs in the background. Tests that
+// assert on the underlying insertOne/updateOne must drain microtasks
+// before checking. setImmediate runs after the microtask queue.
+const flushMicrotasks = () =>
+  new Promise<void>((resolve) => setImmediate(resolve));
+
 import { ObjectId } from "mongodb";
 import {
   archiveWebhookPayload,
@@ -42,17 +50,22 @@ describe("archiveWebhookPayload", () => {
     consoleSpy.mockRestore();
   });
 
-  it("returns the pre-allocated _id and inserts with that id", async () => {
+  it("returns the pre-allocated _id synchronously and inserts with that id", async () => {
     mockDb();
     insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
-    const result = await archiveWebhookPayload({
+    const result = archiveWebhookPayload({
       provider: "stripe",
       headers: new Headers({ "content-type": "application/json" }),
       rawBody: '{"x":1}',
     });
-
+    // Synchronous return is the contract: the webhook hot path must not
+    // wait on Mongo. Background insert continues after the function
+    // returns.
     expect(result).toBeInstanceOf(ObjectId);
+
+    await flushMicrotasks();
+
     const doc = insertOne.mock.calls[0][0] as { _id: ObjectId };
     // The id passed to the insert must equal the id returned to the caller —
     // that's how status updates can target docs even if the insert is slow.
@@ -69,11 +82,29 @@ describe("archiveWebhookPayload", () => {
     );
   });
 
+  it("returns immediately even when the underlying insert hangs", async () => {
+    mockDb();
+    // Insert never resolves — but archiveWebhookPayload must not wait.
+    insertOne.mockReturnValue(new Promise(() => {}));
+
+    const before = Date.now();
+    const result = archiveWebhookPayload({
+      provider: "stripe",
+      headers: {},
+      rawBody: "{}",
+    });
+    const elapsed = Date.now() - before;
+
+    expect(result).toBeInstanceOf(ObjectId);
+    // Sync return: should be sub-millisecond. Generous bound for CI noise.
+    expect(elapsed).toBeLessThan(50);
+  });
+
   it("redacts credential headers", async () => {
     mockDb();
     insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
-    await archiveWebhookPayload({
+    archiveWebhookPayload({
       provider: "stripe",
       headers: new Headers({
         "stripe-signature": "t=123,v1=abc",
@@ -83,6 +114,7 @@ describe("archiveWebhookPayload", () => {
       }),
       rawBody: "{}",
     });
+    await flushMicrotasks();
 
     const doc = insertOne.mock.calls[0][0] as {
       headers: Record<string, string>;
@@ -97,11 +129,12 @@ describe("archiveWebhookPayload", () => {
     mockDb();
     insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
-    await archiveWebhookPayload({
+    archiveWebhookPayload({
       provider: "adobe-sign",
       headers: {},
       rawBody: "<not json>",
     });
+    await flushMicrotasks();
 
     const doc = insertOne.mock.calls[0][0] as { parsed_body: unknown };
     expect(doc.parsed_body).toBeNull();
@@ -111,11 +144,12 @@ describe("archiveWebhookPayload", () => {
     mockDb();
     insertOne.mockRejectedValue(new Error("mongo down"));
 
-    const result = await archiveWebhookPayload({
+    const result = archiveWebhookPayload({
       provider: "stripe",
       headers: {},
       rawBody: "{}",
     });
+    await flushMicrotasks();
 
     // Even on failure we return the pre-allocated id so callers'
     // updateWebhookPayloadStatus calls remain best-effort no-ops rather
@@ -129,11 +163,12 @@ describe("archiveWebhookPayload", () => {
     insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
     const oversized = "x".repeat(1_048_577);
-    await archiveWebhookPayload({
+    archiveWebhookPayload({
       provider: "stripe",
       headers: {},
       rawBody: oversized,
     });
+    await flushMicrotasks();
 
     const doc = insertOne.mock.calls[0][0] as {
       raw_body: string;
@@ -154,11 +189,12 @@ describe("archiveWebhookPayload", () => {
     // 4 bytes/char × 300_000 chars = 1.2 MiB raw — character-slice would
     // happily return all 300_000 chars and bust the cap.
     const fire = "🔥".repeat(300_000);
-    await archiveWebhookPayload({
+    archiveWebhookPayload({
       provider: "stripe",
       headers: {},
       rawBody: fire,
     });
+    await flushMicrotasks();
 
     const doc = insertOne.mock.calls[0][0] as {
       raw_body: string;
@@ -184,7 +220,8 @@ describe("updateWebhookPayloadStatus", () => {
   });
 
   it("does nothing when id is null", async () => {
-    await updateWebhookPayloadStatus(null, { processingStatus: "processed" });
+    updateWebhookPayloadStatus(null, { processingStatus: "processed" });
+    await flushMicrotasks();
     expect(getMongoDb).not.toHaveBeenCalled();
   });
 
@@ -193,11 +230,12 @@ describe("updateWebhookPayloadStatus", () => {
     updateOne.mockResolvedValue({ modifiedCount: 1 });
     const id = new ObjectId();
 
-    await updateWebhookPayloadStatus(id, {
+    updateWebhookPayloadStatus(id, {
       signatureVerified: true,
       processingStatus: "processed",
       eventId: "evt_1",
     });
+    await flushMicrotasks();
 
     expect(updateOne).toHaveBeenCalledWith(
       { _id: id },
@@ -214,11 +252,12 @@ describe("updateWebhookPayloadStatus", () => {
   it("does not throw when the update fails", async () => {
     mockDb();
     updateOne.mockRejectedValue(new Error("nope"));
-    await expect(
+    expect(() =>
       updateWebhookPayloadStatus(new ObjectId(), {
         processingStatus: "failed",
       }),
-    ).resolves.toBeUndefined();
+    ).not.toThrow();
+    await flushMicrotasks();
   });
 });
 

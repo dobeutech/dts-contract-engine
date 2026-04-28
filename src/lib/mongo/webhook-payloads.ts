@@ -78,8 +78,10 @@ export interface ArchiveInput {
   processingStatus?: WebhookProcessingStatus;
 }
 
-// Insert the raw payload before any processing. Fire-and-forget: never
-// throws into the webhook hot path.
+// Insert the raw payload before any processing. Fully fire-and-forget:
+// the caller does not block on Mongo at all. The actual write runs in
+// the background with a bounded timeout for log noise; even when Mongo
+// is fully unreachable, the webhook hot path returns instantly.
 //
 // The _id is allocated on the client side and returned synchronously,
 // even if the insert is still in flight or fails. That means subsequent
@@ -87,11 +89,9 @@ export interface ArchiveInput {
 // the insert eventually lands (slow connect, transient outage), the
 // status updates find the doc; if the insert never lands, the updates
 // are no-ops via updateOne's natural no-match behavior.
-export async function archiveWebhookPayload(
-  input: ArchiveInput,
-): Promise<ObjectId> {
+export function archiveWebhookPayload(input: ArchiveInput): ObjectId {
   const id = new ObjectId();
-  await withTimeout(_archive(input, id), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
+  void withTimeout(_archive(input, id), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
   return id;
 }
 
@@ -134,12 +134,12 @@ export interface UpdateStatusInput {
   eventId?: string | null;
 }
 
-export async function updateWebhookPayloadStatus(
+export function updateWebhookPayloadStatus(
   id: ObjectId | null,
   patch: UpdateStatusInput,
-): Promise<void> {
+): void {
   if (!id) return;
-  await withTimeout(
+  void withTimeout(
     _updateStatus(id, patch),
     FIRE_AND_FORGET_TIMEOUT_MS,
     undefined,

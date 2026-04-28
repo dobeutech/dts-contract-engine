@@ -74,13 +74,6 @@ export async function GET(req: Request) {
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
 
-  if (limit !== undefined && Number.isNaN(limit)) {
-    return NextResponse.json(
-      { ok: false, error: "invalid limit" },
-      { status: 400 },
-    );
-  }
-
   if (since && Number.isNaN(since.getTime())) {
     return NextResponse.json(
       { ok: false, error: "invalid since" },

@@ -18,13 +18,17 @@ export interface AppendAuditEventInput {
   userAgent?: string | null;
 }
 
-// Fire-and-forget audit write. Mirrors the discipline of the previous
-// Postgres-backed recordAudit() — failures are logged, never thrown,
-// must never block the user's primary action.
-export async function appendAuditEvent(
-  input: AppendAuditEventInput,
-): Promise<void> {
-  await withTimeout(_append(input), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
+// Fully detached audit write. Returns synchronously; the actual Mongo
+// insert runs in the background with a bounded timeout for log noise.
+// This is critical for the webhook hot path: we have ~14 recordAudit
+// callsites across webhooks and admin actions, and `await`ing each
+// would stack into a multi-second delay if Mongo is unreachable.
+//
+// Mirrors the previous Postgres-backed recordAudit() discipline:
+// failures are logged, never thrown, must never block the user's
+// primary action.
+export function appendAuditEvent(input: AppendAuditEventInput): void {
+  void withTimeout(_append(input), FIRE_AND_FORGET_TIMEOUT_MS, undefined);
 }
 
 async function _append(input: AppendAuditEventInput): Promise<void> {

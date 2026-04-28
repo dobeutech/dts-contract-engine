@@ -10,6 +10,12 @@ vi.mock("./client", () => ({
   withTimeout: <T>(p: Promise<T>) => p,
 }));
 
+// appendAuditEvent is detached (sync return; insert in background) so
+// the ~14 recordAudit callsites can't stall on Mongo. Tests asserting
+// on the underlying insertOne must drain microtasks first.
+const flushMicrotasks = () =>
+  new Promise<void>((resolve) => setImmediate(resolve));
+
 import { appendAuditEvent } from "./audit-events";
 
 function mockDb() {
@@ -34,13 +40,14 @@ describe("appendAuditEvent", () => {
     const collection = mockDb();
     insertOne.mockResolvedValue({ insertedId: "x" });
 
-    await appendAuditEvent({
+    appendAuditEvent({
       actorId: "user_1",
       action: "stripe.deposit.paid",
       entityType: "quote",
       entityId: "quote_1",
       diff: { amount: 4200 },
     });
+    await flushMicrotasks();
 
     expect(collection).toHaveBeenCalledWith("audit_events");
     expect(insertOne).toHaveBeenCalledWith(
@@ -56,13 +63,26 @@ describe("appendAuditEvent", () => {
     );
   });
 
-  it("never throws when the write fails", async () => {
+  it("returns synchronously even when the underlying insert hangs", () => {
+    mockDb();
+    insertOne.mockReturnValue(new Promise(() => {}));
+
+    const before = Date.now();
+    appendAuditEvent({ actorId: null, action: "stripe.webhook.foo" });
+    const elapsed = Date.now() - before;
+
+    // Sync return is the contract. Generous bound for CI noise.
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it("does not throw when the write fails", async () => {
     mockDb();
     insertOne.mockRejectedValue(new Error("conn refused"));
 
-    await expect(
+    expect(() =>
       appendAuditEvent({ actorId: null, action: "noop" }),
-    ).resolves.toBeUndefined();
+    ).not.toThrow();
+    await flushMicrotasks();
     expect(consoleSpy).toHaveBeenCalled();
   });
 });
