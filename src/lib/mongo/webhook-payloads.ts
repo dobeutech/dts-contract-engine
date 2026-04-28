@@ -55,12 +55,18 @@ function safeParseJson(raw: string): unknown | null {
 }
 
 function maybeTruncate(raw: string): { body: string; truncated: boolean } {
-  if (Buffer.byteLength(raw, "utf8") <= MAX_RAW_BODY_BYTES) {
+  const buf = Buffer.from(raw, "utf8");
+  if (buf.byteLength <= MAX_RAW_BODY_BYTES) {
     return { body: raw, truncated: false };
   }
-  // Slice in characters; persisted body may be slightly under the byte cap
-  // for multi-byte chars, which is fine — we just never exceed it.
-  return { body: raw.slice(0, MAX_RAW_BODY_BYTES), truncated: true };
+  // Byte-safe truncation: a character slice would let multi-byte content
+  // (e.g. emoji at 4 B/char) blow well past the cap. toString("utf8")
+  // substitutes a replacement char for any partial code point at the
+  // boundary, which is fine for forensic storage.
+  return {
+    body: buf.subarray(0, MAX_RAW_BODY_BYTES).toString("utf8"),
+    truncated: true,
+  };
 }
 
 export interface ArchiveInput {

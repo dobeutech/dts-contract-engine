@@ -53,8 +53,10 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const providerParam = url.searchParams.get("provider");
+  // null = absent (no filter); any other value (including "") must match
+  // an allowed provider, otherwise treat as invalid input.
   if (
-    providerParam &&
+    providerParam !== null &&
     !ALLOWED_PROVIDERS.includes(providerParam as WebhookProvider)
   ) {
     return NextResponse.json(

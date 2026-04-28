@@ -50,7 +50,9 @@ serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     const providerParam = url.searchParams.get("provider");
-    if (providerParam && !ALLOWED_PROVIDERS.has(providerParam)) {
+    // null = absent (no filter); any other value (including "") must
+    // match an allowed provider, otherwise treat as invalid input.
+    if (providerParam !== null && !ALLOWED_PROVIDERS.has(providerParam)) {
       return new Response(
         JSON.stringify({ ok: false, error: "invalid provider" }),
         { status: 400, headers: { "content-type": "application/json" } },

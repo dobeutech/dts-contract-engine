@@ -124,7 +124,7 @@ describe("archiveWebhookPayload", () => {
     expect(consoleSpy).toHaveBeenCalled();
   });
 
-  it("truncates oversized bodies and skips JSON parse", async () => {
+  it("truncates oversized ASCII bodies and skips JSON parse", async () => {
     mockDb();
     insertOne.mockResolvedValue({ insertedId: new ObjectId() });
 
@@ -141,8 +141,33 @@ describe("archiveWebhookPayload", () => {
       parsed_body: unknown;
     };
     expect(doc.raw_body_truncated).toBe(true);
-    expect(doc.raw_body.length).toBe(1_048_576);
+    expect(Buffer.byteLength(doc.raw_body, "utf8")).toBeLessThanOrEqual(
+      1_048_576,
+    );
     expect(doc.parsed_body).toBeNull();
+  });
+
+  it("truncates by bytes, not chars, for multi-byte payloads", async () => {
+    mockDb();
+    insertOne.mockResolvedValue({ insertedId: new ObjectId() });
+
+    // 4 bytes/char × 300_000 chars = 1.2 MiB raw — character-slice would
+    // happily return all 300_000 chars and bust the cap.
+    const fire = "🔥".repeat(300_000);
+    await archiveWebhookPayload({
+      provider: "stripe",
+      headers: {},
+      rawBody: fire,
+    });
+
+    const doc = insertOne.mock.calls[0][0] as {
+      raw_body: string;
+      raw_body_truncated: boolean;
+    };
+    expect(doc.raw_body_truncated).toBe(true);
+    expect(Buffer.byteLength(doc.raw_body, "utf8")).toBeLessThanOrEqual(
+      1_048_576,
+    );
   });
 });
 
