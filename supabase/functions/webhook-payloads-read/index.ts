@@ -97,13 +97,16 @@ serve(async (req: Request) => {
         payloads: docs.map((d: any) => ({
           id: String(d._id),
           provider: d.provider,
-          received_at: d.received_at,
+          received_at: d.received_at
+            ? new Date(d.received_at).toISOString()
+            : d.received_at,
           event_id: d.event_id,
           signature_verified: d.signature_verified,
           processing_status: d.processing_status,
           processing_error: d.processing_error,
           headers: d.headers,
           raw_body: d.raw_body,
+          raw_body_truncated: d.raw_body_truncated,
           parsed_body: d.parsed_body,
         })),
       }),
