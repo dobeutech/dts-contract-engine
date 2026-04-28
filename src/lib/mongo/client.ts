@@ -88,10 +88,19 @@ function dbName(): string {
   return process.env.MONGODB_DB_NAME?.trim() || DEFAULT_DB_NAME;
 }
 
-export async function getMongoDb(): Promise<Db> {
+interface GetMongoDbOptions {
+  // Health checks and other lightweight callers should skip index
+  // creation so a slow first-time ensure can't inflate latency or
+  // create misleading noise on those endpoints.
+  skipIndexEnsure?: boolean;
+}
+
+export async function getMongoDb(
+  options: GetMongoDbOptions = {},
+): Promise<Db> {
   const client = await getMongoClient();
   const db = client.db(dbName());
-  await ensureIndexes(db);
+  if (!options.skipIndexEnsure) await ensureIndexes(db);
   return db;
 }
 
@@ -112,9 +121,14 @@ async function ensureIndexes(db: Db): Promise<void> {
       db
         .collection("webhook_payloads")
         .createIndex({ provider: 1, received_at: -1 }),
-      db
-        .collection("webhook_payloads")
-        .createIndex({ event_id: 1 }, { sparse: true }),
+      db.collection("webhook_payloads").createIndex(
+        { event_id: 1 },
+        // Partial — index only docs where event_id is actually known.
+        // We always write the field (with `null` for unmatched webhooks),
+        // so a sparse index would still index every document. A partial
+        // filter on $type:"string" keeps the index small and selective.
+        { partialFilterExpression: { event_id: { $type: "string" } } },
+      ),
       db.collection("webhook_payloads").createIndex(
         { received_at: 1 },
         // 90-day TTL bounds storage; tune via env later if needed.

@@ -8,10 +8,16 @@
 //   supabase secrets set MONGODB_URI=...   # in the Supabase project, not Vercel
 //   supabase functions deploy webhook-payloads-read
 //
-// Auth: requires a Supabase JWT in `Authorization: Bearer <token>`.
-// Supabase's gateway verifies the JWT before invoking this function when
-// `verify_jwt = true` (the default), so we only need to read the
-// resolved user from the request context for logging.
+// Auth, layered to match the Node /api/internal/webhook-payloads route:
+//  1. Supabase's gateway verifies the JWT before invoking this function
+//     when `verify_jwt = true` (the default).
+//  2. We additionally require an INTERNAL_API_BEARER_TOKEN secret in an
+//     `x-internal-bearer` header. Archived webhook bodies contain
+//     Stripe customer PII and a valid user JWT alone is not a strong
+//     enough gate. The token must be set via
+//     `supabase secrets set INTERNAL_API_BEARER_TOKEN=...` to match the
+//     value in Vercel env. If unset, this function fail-closes with
+//     503, mirroring the Node route.
 
 // @ts-expect-error — Deno-only import resolved at deploy time, not in Node TS.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -40,12 +46,51 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+// deno-lint-ignore no-explicit-any
+const cryptoSubtle: any = (globalThis as any).crypto.subtle;
+
+async function bearerMatches(
+  presented: string,
+  expected: string,
+): Promise<boolean> {
+  // Hash both sides to equalize lengths and remove the per-byte timing
+  // channel against the raw secret. Web Crypto's digest is constant-time
+  // for a given input length.
+  const enc = new TextEncoder();
+  const a = new Uint8Array(
+    await cryptoSubtle.digest("SHA-256", enc.encode(presented)),
+  );
+  const b = new Uint8Array(
+    await cryptoSubtle.digest("SHA-256", enc.encode(expected)),
+  );
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 serve(async (req: Request) => {
   if (req.method !== "GET") {
     return new Response(JSON.stringify({ ok: false, error: "method" }), {
       status: 405,
       headers: { "content-type": "application/json" },
     });
+  }
+  const expectedToken = env.get("INTERNAL_API_BEARER_TOKEN")?.trim();
+  if (!expectedToken) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "internal api bearer not configured",
+      }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
+  }
+  const presented = req.headers.get("x-internal-bearer")?.trim() ?? "";
+  if (!presented || !(await bearerMatches(presented, expectedToken))) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "forbidden" }),
+      { status: 403, headers: { "content-type": "application/json" } },
+    );
   }
   try {
     const url = new URL(req.url);

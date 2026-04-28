@@ -8,7 +8,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const started = Date.now();
   try {
-    const db = await getMongoDb();
+    // Skip index ensure on health checks — keep this endpoint minimal so
+    // a slow first-time index creation can't inflate ping_ms or surface
+    // unrelated failures.
+    const db = await getMongoDb({ skipIndexEnsure: true });
     await db.command({ ping: 1 });
     return NextResponse.json({ ok: true, ping_ms: Date.now() - started });
   } catch (e) {

@@ -17,17 +17,25 @@ any in-app caller. Use *this* function only when you need:
 - A surface that can be called from clients that already hold a Supabase
   JWT but should not depend on the Next app being up
 
-## Auth
+## Auth (two layers)
 
-This function relies on Supabase's gateway-level JWT verification. With
-`verify_jwt = true` (the default), Supabase rejects calls that lack a
-valid bearer token before our code runs. Do not flip that flag off.
+1. **Supabase JWT.** With `verify_jwt = true` (the default), Supabase
+   rejects calls that lack a valid bearer token before our code runs.
+   Do not flip that flag off.
+2. **Internal bearer.** The function additionally requires an
+   `x-internal-bearer` header that matches the `INTERNAL_API_BEARER_TOKEN`
+   secret. Same gate as `/api/internal/webhook-payloads` because the
+   archived bodies can contain Stripe customer PII; a valid user JWT
+   alone is not a strong enough gate. Use the same value in both
+   Supabase secrets and Vercel env so callers can swap endpoints.
 
 ## Secrets (set on the Supabase project, not Vercel)
 
 ```bash
 supabase secrets set MONGODB_URI="<your atlas connection string>"
 supabase secrets set MONGODB_DB_NAME="dts_contract_engine"   # optional
+# Must match the Vercel-side INTERNAL_API_BEARER_TOKEN value.
+supabase secrets set INTERNAL_API_BEARER_TOKEN="<shared secret>"
 ```
 
 ## Deploy
@@ -49,7 +57,8 @@ supabase functions serve webhook-payloads-read --env-file .env.local
 
 # In another shell:
 curl 'http://localhost:54321/functions/v1/webhook-payloads-read?provider=stripe&limit=5' \
-  -H "Authorization: Bearer <a-supabase-jwt>"
+  -H "Authorization: Bearer <a-supabase-jwt>" \
+  -H "x-internal-bearer: <INTERNAL_API_BEARER_TOKEN value>"
 ```
 
 ## Query parameters

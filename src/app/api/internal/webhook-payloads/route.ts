@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { findWebhookPayloads } from "@/lib/mongo/webhook-payloads";
 import type { WebhookProvider } from "@/lib/mongo/types";
+
+// Constant-time bearer comparison. Hashing first equalizes lengths
+// (timingSafeEqual throws on mismatch) and removes a per-byte timing
+// channel against the raw secret.
+function bearerMatches(presented: string, expected: string): boolean {
+  const a = createHash("sha256").update(presented).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 // Node-runtime read API for archived webhook payloads. Edge callers
 // should fetch this URL rather than importing the mongodb driver.
@@ -44,7 +54,7 @@ export async function GET(req: Request) {
 
   const auth = req.headers.get("authorization");
   const presented = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (!presented || presented !== expectedToken) {
+  if (!presented || !bearerMatches(presented, expectedToken)) {
     return NextResponse.json(
       { ok: false, error: "forbidden" },
       { status: 403 },
