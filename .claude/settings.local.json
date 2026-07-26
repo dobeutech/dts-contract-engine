@@ -23,7 +23,18 @@
       "PowerShell(pnpm exec vercel *)",
       "Skill(schedule)",
       "Bash(codex --version)",
-      "Bash(gemini --version)"
+      "Bash(gemini --version)",
+      "mcp__devfleet__get_dashboard",
+      "mcp__devfleet__plan_project",
+      "mcp__devfleet__create_project",
+      "mcp__devfleet__create_mission",
+      "mcp__devfleet__dispatch_mission",
+      "mcp__devfleet__get_mission_status",
+      "mcp__devfleet__cancel_mission"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "claude-flow"
+  ],
+  "prefersReducedMotion": true
 }
