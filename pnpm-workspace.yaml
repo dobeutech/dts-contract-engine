@@ -1,3 +1,38 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+# pnpm settings (pnpm 11 via corepack). Migrated 2026-07-25 from the
+# package.json "pnpm" field (no longer read) — those overrides were silently
+# inactive, which is why the audit count had ballooned.
+
+# Build scripts approved (pnpm 11 errors on undecided builds; allowBuilds is
+# the pnpm 11 map — true = run scripts, false = skip silently).
+allowBuilds:
+  supabase: true
+  "@sentry/cli": true
+  esbuild: true
+  msw: true
+  sharp: false
+  unrs-resolver: false
+
+# Security overrides (audit remediation 2026-07-25). Same-major bumps except
+# where noted. esbuild left un-overridden deliberately (bundler pins it; low
+# severity) — revisit on the next tooling upgrade.
+overrides:
+  "@fastify/static": ">=9.1.1"
+  postcss: ">=8.5.18"
+  "uuid@<14.0.0": ">=14.0.0"
+  sharp: ">=0.35.0"
+  fast-uri: ">=3.1.1"
+  hono: ">=4.12.18"
+  ws: ">=8.20.1"
+  qs: ">=6.15.2"
+  js-yaml: ">=4.1.2"
+  "@babel/core": ">=7.29.1"
+  "@opentelemetry/core": ">=2.8.0"
+  "@hono/node-server": ">=2.0.5"
+  ip-address: ">=10.1.1"
+  body-parser: ">=2.3.0"
+  # brace-expansion ReDoS advisories, scoped per major: minimatch 3.x needs
+  # the 1.x API (a blanket >=5 override broke eslint — TypeError: expand is
+  # not a function). Patched floors per major line instead.
+  "brace-expansion@1": "^1.1.12"
+  "brace-expansion@2": "^2.0.2"
+  "brace-expansion@>=3": ">=5.0.8"
